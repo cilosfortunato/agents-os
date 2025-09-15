@@ -1,9 +1,22 @@
-from agno import Agent
-from agno.models import OpenRouterModel
-from agno.tools import DuckDuckGoTools
-from config import Config
 import os
 import json
+from typing import List
+from config import Config
+
+try:
+    from agno.agent import Agent
+    from agno.models.openrouter import OpenRouterModel
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    AGNO_AVAILABLE = True
+except ImportError:
+    try:
+        from agno import Agent
+        from agno.models import OpenRouterModel
+        from agno.tools import DuckDuckGoTools
+        AGNO_AVAILABLE = True
+    except ImportError:
+        print("Agno não está disponível. Usando implementação mock para desenvolvimento.")
+        AGNO_AVAILABLE = False
 
 def create_model():
     """Cria uma instância do modelo OpenRouter configurado"""
