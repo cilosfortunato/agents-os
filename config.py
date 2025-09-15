@@ -16,7 +16,7 @@ class Config:
     
     # Configurações do servidor
     HOST = "0.0.0.0"
-    PORT = 7777
+    PORT = int(os.getenv("PORT", 7777))
     
     # Configurações dos modelos
     DEFAULT_MODEL_ID = "openai/gpt-4o-mini"
