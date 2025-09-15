@@ -18,16 +18,51 @@ except ImportError:
         print("Agno não está disponível. Usando implementação mock para desenvolvimento.")
         AGNO_AVAILABLE = False
 
+# Classes mock para quando agno não estiver disponível
+class MockModel:
+    def __init__(self, model_id=None, api_key=None):
+        self.model_id = model_id or "mock-model"
+        self.api_key = api_key
+    
+    def __call__(self, *args, **kwargs):
+        return "Resposta mock do modelo"
+
+class MockAgent:
+    def __init__(self, name=None, model=None, instructions=None, tools=None, markdown=True, **kwargs):
+        self.name = name or "Mock Agent"
+        self.model = model
+        self.instructions = instructions or []
+        self.tools = tools or []
+        self.markdown = markdown
+    
+    def run(self, *args, **kwargs):
+        return f"Resposta mock do agente {self.name}"
+
+class MockDuckDuckGoTools:
+    def __init__(self):
+        self.name = "Mock DuckDuckGo Tools"
+    
+    def search(self, query):
+        return f"Resultado mock da pesquisa para: {query}"
+
 def create_model():
     """Cria uma instância do modelo OpenRouter configurado"""
-    return OpenRouterModel(
-        model_id="openai/gpt-4o-mini",
-        api_key=Config.OPENAI_API_KEY
-    )
+    if AGNO_AVAILABLE:
+        try:
+            return OpenRouterModel(
+                model_id="openai/gpt-4o-mini",
+                api_key=Config.OPENAI_API_KEY
+            )
+        except NameError:
+            print("OpenRouterModel não disponível, usando mock")
+            return MockModel("openai/gpt-4o-mini", Config.OPENAI_API_KEY)
+    else:
+        return MockModel("openai/gpt-4o-mini", Config.OPENAI_API_KEY)
 
 def create_assistente_principal(user_id: str = "default_user"):
     """Cria o agente assistente principal usando AgentOS"""
-    return Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    return AgentClass(
         name="Assistente Principal",
         model=create_model(),
         instructions=[
@@ -41,7 +76,9 @@ def create_assistente_principal(user_id: str = "default_user"):
 
 def create_agente_pesquisa(user_id: str = "default_user"):
     """Cria o agente especializado em pesquisa usando AgentOS"""
-    return Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
+    return AgentClass(
         name="Agente de Pesquisa",
         model=create_model(),
         instructions=[
@@ -51,13 +88,15 @@ def create_agente_pesquisa(user_id: str = "default_user"):
             "Forneça resumos claros e bem estruturados.",
             "Cite suas fontes quando apropriado."
         ],
-        tools=[DuckDuckGoTools()],
+        tools=[ToolsClass()],
         markdown=True
     )
 
 def create_agente_tecnico(user_id: str = "default_user"):
     """Cria o agente especializado em questões técnicas usando AgentOS"""
-    return Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
+    return AgentClass(
         name="Agente Técnico",
         model=create_model(),
         instructions=[
@@ -67,13 +106,14 @@ def create_agente_tecnico(user_id: str = "default_user"):
             "Explique conceitos complexos de forma clara e didática.",
             "Mantenha-se atualizado com as melhores práticas."
         ],
-        tools=[DuckDuckGoTools()],
+        tools=[ToolsClass()],
         markdown=True
     )
 
 def create_agente_saudacao(user_id: str = "default_user"):
     """Cria o agente especializado em saudações e atendimento inicial usando AgentOS"""
-    return Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    return AgentClass(
         name="Agente de Saudação",
         model=create_model(),
         instructions=[
@@ -89,7 +129,8 @@ def create_agente_saudacao(user_id: str = "default_user"):
 
 def create_agente_vendas_kit_festas(user_id: str = "default_user"):
     """Cria o agente especializado em vendas de kit festas usando AgentOS"""
-    return Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    return AgentClass(
         name="Agente de Vendas Kit Festas",
         model=create_model(),
         instructions=[
@@ -125,11 +166,13 @@ custom_agents_storage = {}
 
 def create_custom_agent(name: str, role: str, instructions: list, user_id: str = "default_user"):
     """Cria um agente personalizado dinamicamente usando AgentOS"""
-    agent = Agent(
+    AgentClass = Agent if AGNO_AVAILABLE else MockAgent
+    ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
+    agent = AgentClass(
         name=name,
         model=create_model(),
         instructions=instructions,
-        tools=[DuckDuckGoTools()],
+        tools=[ToolsClass()],
         markdown=True
     )
     
