@@ -591,3 +591,18 @@ def create_api_app() -> FastAPI:
 
 # Instância global da aplicação para uvicorn
 app = create_api_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    from config import Config
+    
+    server_config = Config.get_server_config()
+    print(f"🚀 Iniciando AgentOS API em http://{server_config['host']}:{server_config['port']}")
+    print(f"📚 Documentação disponível em http://{server_config['host']}:{server_config['port']}/docs")
+    
+    uvicorn.run(
+        "api:app",
+        host=server_config['host'],
+        port=server_config['port'],
+        reload=True
+    )

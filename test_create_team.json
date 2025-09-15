@@ -1,0 +1,9 @@
+{
+  "name": "Time de Teste OpenAI",
+  "description": "Time especializado em testes com OpenAI",
+  "agent_names": [
+    "Assistente Principal",
+    "Agente de Pesquisa"
+  ],
+  "user_id": "test-user"
+}

@@ -1,0 +1,13 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Meu nome é João e eu trabalho como desenvolvedor Python"
+    },
+    {
+      "role": "assistant",
+      "content": "Olá João! É um prazer conhecê-lo. Vejo que você trabalha como desenvolvedor Python. Posso ajudá-lo com questões relacionadas ao desenvolvimento?"
+    }
+  ],
+  "user_id": "test-user-memory"
+}
