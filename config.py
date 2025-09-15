@@ -9,7 +9,6 @@ class Config:
     
     # Chaves de API
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     MEM0_API_KEY = os.getenv("MEM0_API_KEY")
     ZEP_API_KEY = os.getenv("ZEP_API_KEY")
@@ -33,7 +32,7 @@ class Config:
     def validate_keys(cls):
         """Valida se as chaves de API necessárias estão configuradas"""
         required_keys = {
-            "OPENROUTER_API_KEY": cls.OPENROUTER_API_KEY,
+            "OPENAI_API_KEY": cls.OPENAI_API_KEY,
             "MEM0_API_KEY": cls.MEM0_API_KEY
         }
         

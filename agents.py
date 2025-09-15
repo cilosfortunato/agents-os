@@ -10,7 +10,9 @@ def create_model():
     model_config = Config.get_model_config()
     return OpenRouterModel(
         model_id="openai/gpt-4o-mini",
-        temperature=model_config["temperature"]
+        temperature=model_config["temperature"],
+        api_key=Config.OPENAI_API_KEY,
+        base_url="https://api.openai.com/v1"
     )
 
 def create_assistente_principal(user_id: str = "default_user"):

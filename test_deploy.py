@@ -62,7 +62,6 @@ def test_env_vars():
     
     required_vars = [
         'OPENAI_API_KEY',
-        'OPENROUTER_API_KEY', 
         'MEM0_API_KEY',
         'X_API_KEY'
     ]
