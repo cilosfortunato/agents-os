@@ -27,6 +27,10 @@ class MockModel:
     def __call__(self, *args, **kwargs):
         return "Resposta mock do modelo"
 
+class MockConfig:
+    def __init__(self, name=None):
+        self.name = name or "Mock Agent"
+
 class MockAgent:
     def __init__(self, name=None, model=None, instructions=None, tools=None, markdown=True, **kwargs):
         self.name = name or "Mock Agent"
@@ -34,6 +38,7 @@ class MockAgent:
         self.instructions = instructions or []
         self.tools = tools or []
         self.markdown = markdown
+        self.config = MockConfig(name=self.name)
     
     def run(self, *args, **kwargs):
         return f"Resposta mock do agente {self.name}"
