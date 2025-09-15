@@ -1,0 +1,105 @@
+# Manual do Produto - Sistema AgentOS
+
+## Informações Gerais
+O AgentOS é um sistema avançado de agentes inteligentes com memória contextual e base de conhecimento.
+Versão atual: 1.0.0
+Data de lançamento: Janeiro 2025
+
+## Funcionalidades Principais
+
+### Agentes Inteligentes
+- Suporte a múltiplos agentes especializados
+- Cada agente pode ter instruções personalizadas
+- Integração com modelos de linguagem avançados
+- Memória persistente entre conversas
+
+### Base de Conhecimento (RAG)
+- Integração nativa com Pinecone para busca vetorial
+- Suporte a documentos em texto, PDF e páginas web
+- Busca semântica inteligente
+- Sincronização automática de fontes de dados
+
+### Memória Contextual
+- Integração com Mem0 para memória de longo prazo
+- Lembrança de preferências do usuário
+- Contexto mantido entre sessões
+- Busca inteligente em conversas anteriores
+
+### API REST
+- Endpoints completos para CRUD de agentes
+- Gerenciamento de times de agentes
+- Sistema de autenticação com X-API-Key
+- Documentação automática com Swagger
+
+## Configuração
+
+### Chaves de API Necessárias
+- OpenAI API Key: Para modelos de linguagem
+- Pinecone API Key: Para base de conhecimento vetorial
+- Mem0 API Key: Para memória contextual
+- X-API-Key: 151fb361-f295-4a4f-84c9-ec1f42599a67 (autenticação da API)
+
+### Variáveis de Ambiente
+Configure as seguintes variáveis no arquivo .env:
+```
+OPENAI_API_KEY=sua_chave_openai
+PINECONE_API_KEY=sua_chave_pinecone
+MEM0_API_KEY=sua_chave_mem0
+```
+
+## Endpoints da API
+
+### Autenticação
+Todos os endpoints requerem o cabeçalho X-API-Key com o valor: 151fb361-f295-4a4f-84c9-ec1f42599a67
+
+### Agentes
+- GET /agents - Lista todos os agentes
+- POST /agents - Cria novo agente
+- GET /agents/{nome} - Busca agente específico
+- PUT /agents/{nome} - Atualiza agente
+- DELETE /agents/{nome} - Remove agente
+
+### Chat
+- POST /chat - Conversa com agentes
+- POST /teams/run - Executa time de agentes
+
+### Memória
+- GET /memory/search - Busca memórias
+- GET /memory/all - Lista todas as memórias
+- POST /memory/add - Adiciona nova memória
+
+### Base de Conhecimento
+- GET /knowledge - Lista bases de conhecimento
+- POST /knowledge/search - Busca na base de conhecimento
+- POST /knowledge/sync - Sincroniza fontes de dados
+- POST /knowledge/sources - Adiciona nova fonte
+
+## Solução de Problemas
+
+### Erro de Autenticação
+Verifique se o cabeçalho X-API-Key está presente e correto.
+
+### Erro de Conexão com Pinecone
+Verifique se a PINECONE_API_KEY está configurada corretamente.
+
+### Erro de Memória
+Verifique se a MEM0_API_KEY está configurada corretamente.
+
+### Container Docker
+Para reiniciar o container:
+```bash
+docker stop agentos-test
+docker rm agentos-test
+docker run -d --name agentos-test -p 7778:7777 --env-file .env agentos:latest
+```
+
+## Suporte
+Para suporte técnico, consulte a documentação da API em /docs ou entre em contato com a equipe de desenvolvimento.
+
+## Garantia
+O sistema possui garantia de 12 meses para defeitos de software.
+Suporte técnico disponível 24/7 para clientes enterprise.
+
+## Atualizações
+Verifique regularmente por atualizações do sistema.
+O sistema suporta atualizações automáticas quando configurado.

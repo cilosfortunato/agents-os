@@ -1,0 +1,40 @@
+# Dependências principais do AgentOS
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Modelos de IA
+openai>=1.0.0
+
+# Memória persistente e RAG
+mem0ai>=0.1.0
+pinecone-client>=3.0.0
+
+# AgentOS com suporte ao Pinecone
+agno[pinecone]>=0.1.0
+
+# Utilitários essenciais
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+typing-extensions>=4.0.0
+
+# Processamento de dados
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Ferramentas opcionais para banco de dados
+ddgs>=0.1.0
+sqlalchemy>=2.0.0
+psycopg>=3.0.0
+pgvector>=0.1.0
+
+# Dependências para desenvolvimento e testes
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Dependências para produção
+gunicorn>=21.0.0
+loguru>=0.7.0
