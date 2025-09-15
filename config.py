@@ -18,7 +18,7 @@ class Config:
     PORT = int(os.getenv("PORT", 7777))
     
     # Configurações dos modelos
-    DEFAULT_MODEL_ID = "openai/gpt-4o-mini"
+    DEFAULT_MODEL_ID = "gpt-4o-mini"
     DEFAULT_TEMPERATURE = 0.7
     
     # Configurações de memória

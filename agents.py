@@ -1,5 +1,5 @@
 from agno.agent import Agent
-from agno.models.openrouter import OpenRouterModel
+from agno.models.openrouter import OpenAIChat
 from agno.tools.duckduckgo import DuckDuckGoTools
 # from agno.tools.mem0 import Mem0Tools  # Não disponível na versão atual
 from mem0 import MemoryClient
@@ -8,11 +8,10 @@ from config import Config
 def create_model():
     """Cria uma instância do modelo configurado"""
     model_config = Config.get_model_config()
-    return OpenRouterModel(
-        model_id="openai/gpt-4o-mini",
+    return OpenAIChat(
+        id="gpt-4o-mini",
         temperature=model_config["temperature"],
-        api_key=Config.OPENAI_API_KEY,
-        base_url="https://api.openai.com/v1"
+        api_key=Config.OPENAI_API_KEY
     )
 
 def create_assistente_principal(user_id: str = "default_user"):

@@ -10,10 +10,10 @@ except Exception as e:
     print(f"❌ Agent error: {e}")
 
 try:
-    from agno.models.openrouter import OpenRouterModel
-    print("✅ OpenRouterModel import OK")
+    from agno.models.openrouter import OpenAIChat
+    print("✅ OpenAIChat import OK")
 except Exception as e:
-    print(f"❌ OpenRouterModel error: {e}")
+    print(f"❌ OpenAIChat error: {e}")
 
 try:
     from agno.os import AgentOS
