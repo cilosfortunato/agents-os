@@ -115,7 +115,7 @@ logs/
 
 # Docker
 .dockerignore
-Dockerfile
+# Dockerfile removido para permitir deploy
 
 # Backup files
 *.bak
