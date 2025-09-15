@@ -1,54 +1,31 @@
 #!/usr/bin/env python3
 """
-AgentOS - Sistema de Agentes Inteligentes
+AgentOS - Sistema de Agentes Inteligentes usando Agno
 Sistema modular com agentes, memória persistente e API REST
 """
 
-import logging
 import uvicorn
+from fastapi import FastAPI
 from config import Config
 from api import create_api_app
 from agents import get_all_agents
 
-# Configuração de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 def main():
-    """Função principal do sistema AgentOS"""
-    try:
-        # Valida configurações
-        logger.info("Validando configurações...")
-        Config.validate_keys()
-        
-        # Carrega agentes
-        logger.info("Carregando agentes...")
-        agents = get_all_agents()
-        logger.info(f"Agentes carregados: {[agent.config.name for agent in agents]}")
-        
-        # Cria aplicação FastAPI
-        logger.info("Inicializando API...")
-        app = create_api_app()
-        
-        # Configurações do servidor
-        server_config = Config.get_server_config()
-        
-        logger.info(f"🚀 Iniciando AgentOS em http://{server_config['host']}:{server_config['port']}")
-        logger.info(f"📚 Documentação disponível em http://{server_config['host']}:{server_config['port']}/docs")
-        
-        # Inicia o servidor
-        uvicorn.run(
-            app,
-            host=server_config['host'],
-            port=server_config['port']
-        )
-        
-    except Exception as e:
-        logger.error(f"Erro ao iniciar o sistema: {e}")
-        raise
+    """Função principal do sistema AgentOS usando Agno"""
+    # Valida configurações
+    Config.validate_keys()
+    
+    # Carrega agentes
+    agents = get_all_agents()
+    print(f"Agentes carregados: {[agent.config.name for agent in agents]}")
+    
+    # Cria aplicação FastAPI
+    app = create_api_app()
+    
+    # Inicia servidor
+    print("🚀 Iniciando AgentOS em http://0.0.0.0:8000")
+    print("📚 Documentação disponível em http://0.0.0.0:8000/docs")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     main()

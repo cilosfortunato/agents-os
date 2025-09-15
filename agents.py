@@ -1,151 +1,83 @@
-from agno.agent import Agent
-from agno.models.openrouter import OpenAIChat
-from agno.tools.duckduckgo import DuckDuckGoTools
-# from agno.tools.mem0 import Mem0Tools  # Não disponível na versão atual
-from mem0 import MemoryClient
+from agno import Agent
+from agno.models import OpenRouterModel
+from agno.tools import DuckDuckGoTools
 from config import Config
+import os
+import json
 
 def create_model():
-    """Cria uma instância do modelo configurado"""
-    model_config = Config.get_model_config()
-    return OpenAIChat(
-        id="gpt-4o-mini",
-        temperature=model_config["temperature"],
+    """Cria uma instância do modelo OpenRouter configurado"""
+    return OpenRouterModel(
+        model_id="openai/gpt-4o-mini",
         api_key=Config.OPENAI_API_KEY
     )
 
 def create_assistente_principal(user_id: str = "default_user"):
-    """Cria o agente assistente principal com memória Mem0"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria o agente assistente principal usando AgentOS"""
     return Agent(
         name="Assistente Principal",
-        role="Assistente geral com memória persistente",
         model=create_model(),
         instructions=[
-            "Você é um assistente inteligente e prestativo com memória persistente.",
-            "Use sua memória para lembrar de conversas anteriores com o usuário.",
-            "Armazene informações importantes sobre preferências e contexto do usuário.",
-            "Recupere memórias relevantes para fornecer respostas personalizadas.",
+            "Você é um assistente inteligente e prestativo.",
             "Seja cordial, profissional e sempre tente ajudar da melhor forma possível.",
-            "Se não souber algo, seja honesto e sugira alternativas."
+            "Se não souber algo, seja honesto e sugira alternativas.",
+            "Responda de forma clara e objetiva."
         ],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
 
 def create_agente_pesquisa(user_id: str = "default_user"):
-    """Cria o agente especializado em pesquisa com memória Mem0"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria o agente especializado em pesquisa usando AgentOS"""
     return Agent(
         name="Agente de Pesquisa",
-        role="Especialista em pesquisa e análise de informações",
         model=create_model(),
         instructions=[
             "Você é um especialista em pesquisa e análise de informações.",
             "Use o DuckDuckGo para buscar informações atualizadas e relevantes.",
             "Analise criticamente as informações encontradas.",
             "Forneça resumos claros e bem estruturados.",
-            "Cite suas fontes quando apropriado.",
-            "Use o contexto de pesquisas anteriores para melhorar futuras consultas.",
-            "Lembre-se de descobertas importantes para referência futura."
+            "Cite suas fontes quando apropriado."
         ],
         tools=[DuckDuckGoTools()],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
 
 def create_agente_tecnico(user_id: str = "default_user"):
-    """Cria o agente especializado em questões técnicas com memória Mem0"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria o agente especializado em questões técnicas usando AgentOS"""
     return Agent(
         name="Agente Técnico",
-        role="Especialista em soluções técnicas e programação",
         model=create_model(),
         instructions=[
             "Você é um especialista técnico em programação e soluções de TI.",
             "Forneça soluções práticas e bem explicadas para problemas técnicos.",
             "Use exemplos de código quando apropriado.",
             "Explique conceitos complexos de forma clara e didática.",
-            "Mantenha-se atualizado com as melhores práticas.",
-            "Use o contexto de soluções anteriores para problemas similares.",
-            "Lembre-se de configurações e preferências técnicas do usuário."
+            "Mantenha-se atualizado com as melhores práticas."
         ],
         tools=[DuckDuckGoTools()],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
 
 def create_agente_saudacao(user_id: str = "default_user"):
-    """Cria o agente especializado em saudações e atendimento inicial"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria o agente especializado em saudações e atendimento inicial usando AgentOS"""
     return Agent(
         name="Agente de Saudação",
-        role="Especialista em recepção e atendimento inicial",
         model=create_model(),
         instructions=[
             "Você é um agente especializado em saudações calorosas e atendimento inicial.",
             "Seja sempre simpático, educado e acolhedor com os clientes.",
             "Faça perguntas para conhecer melhor o cliente (nome, preferências, ocasião).",
-            "Lembre-se de informações pessoais dos clientes para personalizar o atendimento.",
             "Direcione o cliente para o agente de vendas quando apropriado.",
             "Use emojis para tornar a conversa mais calorosa e amigável.",
             "Mantenha um tom profissional mas descontraído."
         ],
-        tools=[],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
 
 def create_agente_vendas_kit_festas(user_id: str = "default_user"):
-    """Cria o agente especializado em vendas de kit festas"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria o agente especializado em vendas de kit festas usando AgentOS"""
     return Agent(
         name="Agente de Vendas Kit Festas",
-        role="Especialista em vendas de kits para festas e eventos",
         model=create_model(),
         instructions=[
             "Você é um especialista em vendas de kits para festas em uma loja de doces e salgados.",
@@ -154,13 +86,9 @@ def create_agente_vendas_kit_festas(user_id: str = "default_user"):
             "Preços: Kit Básico (50 pessoas) R$ 280, Kit Premium (50 pessoas) R$ 420, Kit Luxo (50 pessoas) R$ 580.",
             "Sempre pergunte sobre: número de convidados, tipo de evento, data, orçamento disponível.",
             "Ofereça personalizações: cores temáticas, sabores especiais, decoração extra.",
-            "Lembre-se das preferências e histórico de compras dos clientes.",
             "Seja persuasivo mas não insistente, foque nos benefícios e qualidade.",
             "Ofereça descontos para pedidos antecipados (10% para pedidos com 15 dias de antecedência)."
         ],
-        tools=[],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
 
@@ -175,37 +103,20 @@ def get_all_agents(user_id: str = "default_user"):
     ]
 
 def save_agent_memory(user_id: str, messages: list):
-    """Salva a interação na memória Mem0"""
-    try:
-        memory_client = MemoryClient()
-        memory_client.add(messages, user_id=user_id)
-        return True
-    except Exception as e:
-        print(f"Erro ao salvar memória: {e}")
-        return False
+    """Placeholder para salvar memória - implementação futura"""
+    # TODO: Implementar integração com sistema de memória
+    return True
 
 # Armazenamento dinâmico de agentes personalizados
 custom_agents_storage = {}
 
 def create_custom_agent(name: str, role: str, instructions: list, user_id: str = "default_user"):
-    """Cria um agente personalizado dinamicamente"""
-    # Inicializa o cliente Mem0 para este usuário
-    memory_client = MemoryClient()
-    
-    # Recupera memórias existentes para contexto
-    try:
-        user_memories = memory_client.get_all(user_id=user_id)
-    except:
-        user_memories = []
-    
+    """Cria um agente personalizado dinamicamente usando AgentOS"""
     agent = Agent(
         name=name,
-        role=role,
         model=create_model(),
         instructions=instructions,
         tools=[DuckDuckGoTools()],
-        dependencies={"memory": user_memories, "memory_client": memory_client, "user_id": user_id},
-        add_dependencies_to_context=True,
         markdown=True
     )
     
@@ -261,11 +172,11 @@ def get_custom_agents(user_id: str = "default_user"):
     return user_agents
 
 def get_agent_by_name(name: str, user_id: str = "default_user"):
-    """Busca um agente pelo nome (padrão ou personalizado) com memória Mem0 configurada"""
+    """Busca um agente pelo nome (padrão ou personalizado) usando AgentOS"""
     # Primeiro busca nos agentes padrão
     agents = get_all_agents(user_id=user_id)
     for agent in agents:
-        if agent.config.name == name:
+        if agent.name == name:
             return agent
     
     # Depois busca nos agentes personalizados
