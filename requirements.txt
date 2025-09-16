@@ -1,9 +1,9 @@
 # Dependências principais do AgentOS
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi>=0.109.2,<0.110.0
+uvicorn[standard]>=0.22.0,<0.25.0
 pydantic>=2.7.3,<3.0.0  # Atualizado para compatibilidade com mem0ai
-python-dotenv==1.0.0
-requests==2.31.0
+python-dotenv>=1.0.1
+requests>=2.32.3,<3.0.0
 
 # Modelos de IA
 openai>=1.33.0,<2.0.0
@@ -13,8 +13,8 @@ mem0ai==0.1.0
 pinecone-client==3.0.0
 
 # Utilitários
-numpy==1.24.0
-pandas==2.0.0
+numpy>=1.26.2,<2.0.0
+pandas>=2.0.3,<3.0.0
 loguru==0.7.0
 
 # Dependências de desenvolvimento
@@ -24,7 +24,7 @@ black==23.1.0
 flake8==6.0.0
 
 # Produção
-gunicorn==21.2.0
+gunicorn>=20.1.0,<21.0.0
 
 # Nota: agno[pinecone] removido devido a problemas de compatibilidade
 # Instalar manualmente se necessário: pip install agno[pinecone]
