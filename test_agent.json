@@ -1,0 +1,14 @@
+{
+  "name": "TesteAgente",
+  "model": {
+    "provider": "openai",
+    "name": "gpt-4o-mini"
+  },
+  "system_message": "Você é um assistente útil que responde perguntas sobre IA.",
+  "enable_user_memories": true,
+  "tools": ["DuckDuckGoTools"],
+  "add_history_to_context": true,
+  "num_history_runs": 5,
+  "add_datetime_to_context": true,
+  "markdown": true
+}

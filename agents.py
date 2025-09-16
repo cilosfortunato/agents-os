@@ -8,15 +8,10 @@ try:
     from agno.models.openrouter import OpenRouterModel
     from agno.tools.duckduckgo import DuckDuckGoTools
     AGNO_AVAILABLE = True
-except ImportError:
-    try:
-        from agno import Agent
-        from agno.models import OpenRouterModel
-        from agno.tools import DuckDuckGoTools
-        AGNO_AVAILABLE = True
-    except ImportError:
-        print("Agno não está disponível. Usando implementação mock para desenvolvimento.")
-        AGNO_AVAILABLE = False
+    print("✅ Agno importado com sucesso!")
+except ImportError as e:
+    print(f"Agno não está disponível: {e}. Usando implementação mock para desenvolvimento.")
+    AGNO_AVAILABLE = False
 
 # Classes mock para quando agno não estiver disponível
 class MockModel:
@@ -51,18 +46,18 @@ class MockDuckDuckGoTools:
         return f"Resultado mock da pesquisa para: {query}"
 
 def create_model():
-    """Cria uma instância do modelo OpenRouter configurado"""
+    """Cria uma instância do modelo OpenAI via OpenRouter configurado"""
     if AGNO_AVAILABLE:
         try:
             return OpenRouterModel(
                 model_id="openai/gpt-4o-mini",
-                api_key=Config.OPENAI_API_KEY
+                api_key=os.getenv("OPENROUTER_API_KEY")
             )
         except NameError:
             print("OpenRouterModel não disponível, usando mock")
-            return MockModel("openai/gpt-4o-mini", Config.OPENAI_API_KEY)
+            return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
     else:
-        return MockModel("openai/gpt-4o-mini", Config.OPENAI_API_KEY)
+        return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
 
 def create_assistente_principal(user_id: str = "default_user"):
     """Cria o agente assistente principal usando AgentOS"""
@@ -169,17 +164,26 @@ def save_agent_memory(user_id: str, messages: list):
 # Armazenamento dinâmico de agentes personalizados
 custom_agents_storage = {}
 
-def create_custom_agent(name: str, role: str, instructions: list, user_id: str = "default_user"):
+def create_custom_agent(name: str, role: str = None, instructions: list = None, user_id: str = "default_user", agent_id: str = None, model: dict = None, system_message: str = None, enable_user_memories: bool = True, tools: list = None, add_history_to_context: bool = True, num_history_runs: int = 5, add_datetime_to_context: bool = True, markdown: bool = True):
     """Cria um agente personalizado dinamicamente usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
+    
+    # Usa system_message se fornecido, senão usa instructions
+    agent_instructions = system_message or (instructions if instructions else ["Você é um assistente útil."])
+    
+    # Cria o agente com os parâmetros fornecidos
     agent = AgentClass(
         name=name,
         model=create_model(),
-        instructions=instructions,
-        tools=[ToolsClass()],
-        markdown=True
+        instructions=agent_instructions if isinstance(agent_instructions, list) else [agent_instructions],
+        tools=[ToolsClass()] if tools and "DuckDuckGoTools" in tools else [],
+        markdown=markdown
     )
+    
+    # Adiciona ID se fornecido
+    if agent_id:
+        agent.id = agent_id
     
     # Armazena o agente personalizado
     agent_key = f"{user_id}_{name}"
@@ -187,8 +191,17 @@ def create_custom_agent(name: str, role: str, instructions: list, user_id: str =
         "agent": agent,
         "name": name,
         "role": role,
-        "instructions": instructions,
-        "user_id": user_id
+        "instructions": agent_instructions,
+        "user_id": user_id,
+        "id": agent_id,
+        "model": model or {"provider": "openai", "name": "gpt-4o-mini"},
+        "system_message": system_message,
+        "enable_user_memories": enable_user_memories,
+        "tools": tools or [],
+        "add_history_to_context": add_history_to_context,
+        "num_history_runs": num_history_runs,
+        "add_datetime_to_context": add_datetime_to_context,
+        "markdown": markdown
     }
     
     return agent
@@ -237,12 +250,38 @@ def get_agent_by_name(name: str, user_id: str = "default_user"):
     # Primeiro busca nos agentes padrão
     agents = get_all_agents(user_id=user_id)
     for agent in agents:
-        if agent.name == name:
+        agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
+        if agent_name == name:
             return agent
     
     # Depois busca nos agentes personalizados
     agent_key = f"{user_id}_{name}"
     if agent_key in custom_agents_storage:
         return custom_agents_storage[agent_key]["agent"]
+    
+    return None
+
+def get_agent_by_id(agent_id: str, user_id: str = "default_user"):
+    """Busca um agente pelo ID (padrão ou personalizado) usando AgentOS"""
+    # Primeiro busca nos agentes padrão
+    agents = get_all_agents(user_id=user_id)
+    for agent in agents:
+        if hasattr(agent, 'id') and agent.id == agent_id:
+            return agent
+        # Fallback para nome se não tiver ID
+        agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
+        if agent_name == agent_id:
+            return agent
+    
+    # Depois busca nos agentes personalizados
+    for agent_key, agent_data in custom_agents_storage.items():
+        if agent_data["user_id"] == user_id:
+            agent = agent_data["agent"]
+            if hasattr(agent, 'id') and agent.id == agent_id:
+                return agent
+            # Fallback para nome se não tiver ID
+            agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
+            if agent_name == agent_id:
+                return agent
     
     return None

@@ -1,0 +1,10 @@
+{
+  "message": "Olá! Como você pode me ajudar hoje?",
+  "agent_id": "d46c7a7a-4275-4ac6-9b86-d7df00d7cc2e",
+  "debounce": 15000,
+  "session_id": "test-session-123",
+  "message_id": "msg-001",
+  "cliente_id": "cliente-teste",
+  "user_id": "user-teste-123",
+  "id_conta": "conta-teste-456"
+}

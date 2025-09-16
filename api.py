@@ -1,16 +1,18 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union
+import uuid
 from agents import (
-    get_all_agents, get_agent_by_name, save_agent_memory,
-    create_custom_agent, update_custom_agent, delete_custom_agent, get_custom_agents
+    get_all_agents, get_agent_by_name, get_agent_by_id, save_agent_memory,
+    create_custom_agent, update_custom_agent, delete_custom_agent, get_custom_agents,
+    custom_agents_storage
 )
 from teams import (
     create_team, get_all_teams, get_team_by_id, update_team, delete_team, run_team
 )
 from memory import memory_manager
-from knowledge import knowledge_manager
+from knowledge import knowledge_manager, get_knowledge_by_id, create_knowledge_base_with_config, delete_knowledge_base, add_source_to_knowledge
 import logging
 
 # Configuração de logging
@@ -56,9 +58,16 @@ class AgentResponse(BaseModel):
     user_id: str
 
 class AgentCreateRequest(BaseModel):
+    id: Optional[str] = Field(None, description="UUID opcional para o agente")
     name: str
-    role: str
-    instructions: List[str]
+    model: Dict[str, str] = Field({"provider": "openai", "name": "gpt-4o-mini"}, description="Configuração do modelo")
+    system_message: str = Field(..., description="Mensagem de sistema do agente")
+    enable_user_memories: bool = Field(True, description="Habilitar memórias do usuário")
+    tools: List[str] = Field(["DuckDuckGoTools"], description="Ferramentas disponíveis")
+    add_history_to_context: bool = Field(True, description="Adicionar histórico ao contexto")
+    num_history_runs: int = Field(5, description="Número de execuções no histórico")
+    add_datetime_to_context: bool = Field(True, description="Adicionar data/hora ao contexto")
+    markdown: bool = Field(True, description="Usar formatação markdown")
     user_id: Optional[str] = "default_user"
 
 class AgentUpdateRequest(BaseModel):
@@ -67,9 +76,10 @@ class AgentUpdateRequest(BaseModel):
     instructions: Optional[List[str]] = None
 
 class TeamCreateRequest(BaseModel):
+    id: Optional[str] = Field(None, description="UUID opcional para o time")
     name: str
-    description: str
-    agent_names: List[str]
+    agents: List[str] = Field(..., description="Lista de IDs dos agentes")
+    instructions: str = Field(..., description="Instruções para o time")
     user_id: Optional[str] = "default_user"
 
 class TeamUpdateRequest(BaseModel):
@@ -104,9 +114,35 @@ class KnowledgeSourceRequest(BaseModel):
     config: Dict[str, Any]
 
 class KnowledgeCreateRequest(BaseModel):
-    knowledge_id: str
+    id: Optional[str] = Field(None, description="UUID opcional para o conhecimento")
+    type: str = Field("text", description="Tipo do conhecimento")
+    name: str = Field(..., description="Nome do conhecimento")
+    description: str = Field(..., description="Descrição do conhecimento")
+    content: Optional[str] = Field(None, description="Conteúdo do conhecimento")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Metadados")
+    reader: str = Field("default", description="Leitor padrão")
+    chunker: str = Field("default", description="Chunker padrão")
     vectordb: Optional[Dict[str, Any]] = None
     sources: List[Dict[str, Any]] = []
+
+class AgentRunRequest(BaseModel):
+    message: str = Field(..., description="Mensagem para o agente")
+    user_id: Optional[str] = Field("default_user", description="ID do usuário")
+    session_id: Optional[str] = Field(None, description="ID da sessão")
+
+class TeamRunRequest2(BaseModel):
+    message: str = Field(..., description="Mensagem para o time")
+    user_id: Optional[str] = Field("default_user", description="ID do usuário")
+    session_id: Optional[str] = Field(None, description="ID da sessão")
+
+class MCPRequest(BaseModel):
+    action: str = Field(..., description="Ação MCP a ser executada")
+    user_id: Optional[str] = Field("default_user", description="ID do usuário")
+    content: Optional[str] = Field(None, description="Conteúdo da memória")
+    topic: Optional[str] = Field(None, description="Tópico da memória")
+    memory_id: Optional[str] = Field(None, description="ID da memória")
+    query: Optional[str] = Field(None, description="Query de busca")
+    limit: Optional[int] = Field(5, description="Limite de resultados")
 
 def create_api_app() -> FastAPI:
     """Cria e configura a aplicação FastAPI"""
@@ -195,18 +231,35 @@ def create_api_app() -> FastAPI:
     async def create_agent(request: AgentCreateRequest, api_key: str = Depends(verify_api_key)):
         """Cria um novo agente personalizado"""
         try:
+            # Gera UUID se não fornecido
+            agent_id = request.id or str(uuid.uuid4())
+            
             agent = create_custom_agent(
+                agent_id=agent_id,
                 name=request.name,
-                role=request.role,
-                instructions=request.instructions,
+                model=request.model,
+                system_message=request.system_message,
+                enable_user_memories=request.enable_user_memories,
+                tools=request.tools,
+                add_history_to_context=request.add_history_to_context,
+                num_history_runs=request.num_history_runs,
+                add_datetime_to_context=request.add_datetime_to_context,
+                markdown=request.markdown,
                 user_id=request.user_id
             )
             return {
                 "message": "Agente criado com sucesso",
                 "agent": {
+                    "id": agent_id,
                     "name": request.name,
-                    "role": request.role,
-                    "instructions": request.instructions,
+                    "model": request.model,
+                    "system_message": request.system_message,
+                    "enable_user_memories": request.enable_user_memories,
+                    "tools": request.tools,
+                    "add_history_to_context": request.add_history_to_context,
+                    "num_history_runs": request.num_history_runs,
+                    "add_datetime_to_context": request.add_datetime_to_context,
+                    "markdown": request.markdown,
                     "user_id": request.user_id
                 }
             }
@@ -230,16 +283,21 @@ def create_api_app() -> FastAPI:
                 })
             
             # Agentes personalizados
-            custom_agents = get_custom_agents(user_id=user_id)
+            from agents import custom_agents_storage
             custom_agents_data = []
-            for agent in custom_agents:
-                custom_agents_data.append({
-                    "name": agent.config.name,
-                    "role": agent.role,
-                    "instructions": getattr(agent, 'instructions', []),
-                    "user_id": user_id,
-                    "type": "custom"
-                })
+            for agent_key, agent_data in custom_agents_storage.items():
+                if agent_data["user_id"] == user_id:
+                    custom_agents_data.append({
+                        "id": agent_data.get("id", agent_key),
+                        "name": agent_data["name"],
+                        "role": agent_data.get("role", "Agente Personalizado"),
+                        "instructions": agent_data.get("instructions", []),
+                        "user_id": user_id,
+                        "type": "custom",
+                        "model": agent_data.get("model", {}),
+                        "system_message": agent_data.get("system_message", ""),
+                        "tools": agent_data.get("tools", [])
+                    })
             
             return {
                 "default_agents": default_agents_data,
@@ -249,29 +307,73 @@ def create_api_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/agents/{agent_name}", summary="Buscar agente específico", tags=["Agentes"])
-    async def get_agent(agent_name: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
-        """Busca um agente específico pelo nome"""
+    @app.get("/agents/{agent_id}", summary="Buscar agente específico", tags=["Agentes"])
+    async def get_agent(agent_id: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Busca um agente específico pelo ID"""
         try:
-            agent = get_agent_by_name(agent_name, user_id=user_id)
+            # Primeiro verifica nos agentes personalizados
+            from agents import custom_agents_storage
+            for agent_key, agent_data in custom_agents_storage.items():
+                if agent_data.get("id") == agent_id and agent_data["user_id"] == user_id:
+                    return {
+                        "id": agent_data.get("id", agent_key),
+                        "name": agent_data["name"],
+                        "role": agent_data.get("role", "Agente Personalizado"),
+                        "model": agent_data.get("model", {"provider": "openai", "name": "gpt-4o-mini"}),
+                        "system_message": agent_data.get("system_message", ""),
+                        "instructions": agent_data.get("instructions", []),
+                        "enable_user_memories": agent_data.get("enable_user_memories", True),
+                        "tools": agent_data.get("tools", ["DuckDuckGoTools"]),
+                        "add_history_to_context": agent_data.get("add_history_to_context", True),
+                        "num_history_runs": agent_data.get("num_history_runs", 5),
+                        "add_datetime_to_context": agent_data.get("add_datetime_to_context", True),
+                        "markdown": agent_data.get("markdown", True),
+                        "user_id": user_id,
+                        "type": "custom"
+                    }
+            
+            # Se não encontrou nos personalizados, busca nos padrão
+            agent = get_agent_by_id(agent_id, user_id=user_id)
             if not agent:
                 raise HTTPException(status_code=404, detail="Agente não encontrado")
             
             return {
-                "name": agent.config.name,
-                "role": getattr(agent, 'role', 'Agente'),
+                "id": agent_id,
+                "name": getattr(agent, 'name', getattr(agent.config, 'name', 'Agente Padrão')),
+                "role": "Agente Padrão",
+                "model": {"provider": "openai", "name": "gpt-4o-mini"},
+                "system_message": getattr(agent, 'system_message', ''),
                 "instructions": getattr(agent, 'instructions', []),
-                "user_id": user_id
+                "enable_user_memories": True,
+                "tools": ["DuckDuckGoTools"],
+                "add_history_to_context": True,
+                "num_history_runs": 5,
+                "add_datetime_to_context": True,
+                "markdown": True,
+                "user_id": user_id,
+                "type": "default"
             }
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.put("/agents/{agent_name}", summary="Atualizar agente", tags=["Agentes"])
-    async def update_agent(agent_name: str, request: AgentUpdateRequest, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+    @app.put("/agents/{agent_id}", summary="Atualizar agente", tags=["Agentes"])
+    async def update_agent(agent_id: str, request: AgentUpdateRequest, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
         """Atualiza um agente personalizado existente"""
         try:
+            # Primeiro, encontra o agente pelo ID para obter o nome atual
+            agent_found = None
+            agent_name = None
+            for agent_key, agent_data in custom_agents_storage.items():
+                if agent_data["user_id"] == user_id and agent_data["id"] == agent_id:
+                    agent_found = agent_data
+                    agent_name = agent_data["name"]
+                    break
+            
+            if not agent_found:
+                raise HTTPException(status_code=404, detail="Agente não encontrado")
+            
             updated_agent = update_custom_agent(
                 name=agent_name,
                 new_name=request.name,
@@ -286,8 +388,9 @@ def create_api_app() -> FastAPI:
             return {
                 "message": "Agente atualizado com sucesso",
                 "agent": {
+                    "id": agent_id,
                     "name": updated_agent.config.name,
-                    "role": updated_agent.role,
+                    "role": getattr(updated_agent, 'role', 'Agente'),
                     "instructions": getattr(updated_agent, 'instructions', []),
                     "user_id": user_id
                 }
@@ -297,16 +400,45 @@ def create_api_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.delete("/agents/{agent_name}", summary="Remover agente", tags=["Agentes"])
-    async def delete_agent(agent_name: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+    @app.delete("/agents/{agent_id}", summary="Remover agente", tags=["Agentes"])
+    async def delete_agent(agent_id: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
         """Remove um agente personalizado"""
         try:
-            success = delete_custom_agent(agent_name, user_id=user_id)
+            success = delete_custom_agent(agent_id, user_id=user_id)
             
             if not success:
                 raise HTTPException(status_code=404, detail="Agente não encontrado ou não é personalizável")
             
-            return {"message": f"Agente '{agent_name}' removido com sucesso"}
+            return {"message": f"Agente '{agent_id}' removido com sucesso"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/agents/{agent_id}/run", summary="Executar agente", tags=["Agentes"])
+    async def run_agent(agent_id: str, request: AgentRunRequest, api_key: str = Depends(verify_api_key)):
+        """Executa um agente específico com uma mensagem"""
+        try:
+            agent = get_agent_by_id(agent_id, user_id=request.user_id or "default_user")
+            if not agent:
+                raise HTTPException(status_code=404, detail="Agente não encontrado")
+            
+            # Executa o agente com a mensagem
+            response = agent.run(request.message, user_id=request.user_id, session_id=request.session_id)
+            
+            return {
+                "messages": [response],
+                "transferir": False,
+                "session_id": request.session_id,
+                "user_id": request.user_id,
+                "agent_id": agent_id,
+                "custom": [],
+                "agent_usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "model": "gpt-4o-mini"
+                }
+            }
         except HTTPException:
             raise
         except Exception as e:
@@ -319,8 +451,8 @@ def create_api_app() -> FastAPI:
         try:
             team = create_team(
                 name=request.name,
-                description=request.description,
-                agent_names=request.agent_names,
+                description=request.instructions,  # Usando instructions como description
+                agent_names=request.agents,  # Usando agents como agent_names
                 user_id=request.user_id
             )
             
@@ -331,8 +463,8 @@ def create_api_app() -> FastAPI:
                 "message": "Time criado com sucesso",
                 "team": {
                     "name": request.name,
-                    "description": request.description,
-                    "agent_names": request.agent_names,
+                    "instructions": request.instructions,
+                    "agents": request.agents,
                     "user_id": request.user_id
                 }
             }
@@ -427,24 +559,32 @@ def create_api_app() -> FastAPI:
          except Exception as e:
              raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/teams/run", summary="Executar time", tags=["Chat"])
-    async def run_team_endpoint(request: TeamRunRequest, api_key: str = Depends(verify_api_key)):
-        """Executa um time com uma mensagem"""
+    @app.post("/teams/{team_id}/run", summary="Executar time", tags=["Times"])
+    async def run_team_endpoint(team_id: str, request: TeamRunRequest2, api_key: str = Depends(verify_api_key)):
+        """Executa um time específico com uma mensagem"""
         try:
+            team = get_team_by_id(team_id, user_id=request.user_id or "default_user")
+            if not team:
+                raise HTTPException(status_code=404, detail="Time não encontrado")
+            
             response = run_team(
-                team_id=request.team_id,
+                team_id=team_id,
                 message=request.message,
                 user_id=request.user_id
             )
             
-            if not response:
-                raise HTTPException(status_code=404, detail="Time não encontrado")
-            
             return {
-                "message": "Time executado com sucesso",
-                "team_id": request.team_id,
-                "response": response,
-                "user_id": request.user_id
+                "messages": [response],
+                "transferir": False,
+                "session_id": request.session_id,
+                "user_id": request.user_id,
+                "team_id": team_id,
+                "custom": [],
+                "team_usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "model": "gpt-4o-mini"
+                }
             }
         except HTTPException:
             raise
@@ -564,11 +704,139 @@ def create_api_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    @app.post("/knowledge/create", summary="Criar nova base de conhecimento", tags=["Base de Conhecimento"])
+    @app.get("/knowledge/{knowledge_id}", summary="Buscar conhecimento específico", tags=["Base de Conhecimento"])
+    async def get_knowledge(knowledge_id: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Busca uma base de conhecimento específica pelo ID"""
+        try:
+            knowledge = get_knowledge_by_id(knowledge_id, user_id=user_id)
+            if not knowledge:
+                raise HTTPException(status_code=404, detail="Base de conhecimento não encontrada")
+            
+            return {
+                "id": knowledge_id,
+                "type": getattr(knowledge, 'type', 'text'),
+                "name": knowledge.config.name,
+                "description": getattr(knowledge, 'description', ''),
+                "content": getattr(knowledge, 'content', ''),
+                "metadata": getattr(knowledge, 'metadata', {}),
+                "reader": getattr(knowledge, 'reader', 'default'),
+                "chunker": getattr(knowledge, 'chunker', 'default'),
+                "sources": [source.config.path for source in knowledge.sources],
+                "user_id": user_id
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/knowledge/{knowledge_id}/sync", summary="Sincronizar conhecimento", tags=["Base de Conhecimento"])
+    async def sync_knowledge_specific(knowledge_id: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Sincroniza uma base de conhecimento específica"""
+        try:
+            knowledge = get_knowledge_by_id(knowledge_id, user_id=user_id)
+            if not knowledge:
+                raise HTTPException(status_code=404, detail="Base de conhecimento não encontrada")
+            
+            # Sincroniza a base de conhecimento
+            knowledge.sync()
+            
+            return {
+                "message": f"Base de conhecimento '{knowledge_id}' sincronizada com sucesso",
+                "knowledge_id": knowledge_id,
+                "user_id": user_id
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/knowledge/{knowledge_id}/sources", summary="Adicionar fonte ao conhecimento", tags=["Base de Conhecimento"])
+    async def add_knowledge_source_specific(knowledge_id: str, request: KnowledgeSourceRequest, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Adiciona uma nova fonte a uma base de conhecimento existente"""
+        try:
+            knowledge = get_knowledge_by_id(knowledge_id, user_id=user_id)
+            if not knowledge:
+                raise HTTPException(status_code=404, detail="Base de conhecimento não encontrada")
+            
+            # Adiciona a nova fonte
+            success = add_source_to_knowledge(
+                knowledge_id=knowledge_id,
+                source_path=request.source_path,
+                source_type=request.source_type,
+                user_id=user_id
+            )
+            
+            if not success:
+                raise HTTPException(status_code=400, detail="Falha ao adicionar fonte")
+            
+            return {
+                "message": "Fonte adicionada com sucesso",
+                "knowledge_id": knowledge_id,
+                "source_path": request.source_path,
+                "user_id": user_id
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.put("/knowledge/{knowledge_id}", summary="Atualizar conhecimento", tags=["Base de Conhecimento"])
+    async def update_knowledge(knowledge_id: str, request: KnowledgeCreateRequest, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Atualiza uma base de conhecimento existente"""
+        try:
+            knowledge = get_knowledge_by_id(knowledge_id, user_id=user_id)
+            if not knowledge:
+                raise HTTPException(status_code=404, detail="Base de conhecimento não encontrada")
+            
+            # Atualiza os campos fornecidos
+            if request.name:
+                knowledge.config.name = request.name
+            if request.description:
+                setattr(knowledge, 'description', request.description)
+            if request.content:
+                setattr(knowledge, 'content', request.content)
+            if request.metadata:
+                setattr(knowledge, 'metadata', request.metadata)
+            
+            return {
+                "message": "Base de conhecimento atualizada com sucesso",
+                "knowledge_id": knowledge_id,
+                "user_id": user_id
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.delete("/knowledge/{knowledge_id}", summary="Remover conhecimento", tags=["Base de Conhecimento"])
+    async def delete_knowledge(knowledge_id: str, user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
+        """Remove uma base de conhecimento"""
+        try:
+            success = delete_knowledge_base(knowledge_id, user_id=user_id)
+            
+            if not success:
+                raise HTTPException(status_code=404, detail="Base de conhecimento não encontrada")
+            
+            return {"message": f"Base de conhecimento '{knowledge_id}' removida com sucesso"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/knowledge", summary="Criar nova base de conhecimento", tags=["Base de Conhecimento"])
     async def create_knowledge_base(request: KnowledgeCreateRequest, api_key: str = Depends(verify_api_key)):
         """Cria uma nova base de conhecimento"""
         try:
+            knowledge_id = request.id or str(uuid.uuid4())
+            
             config = {
+                "name": request.name,
+                "type": request.type,
+                "description": request.description,
+                "content": request.content,
+                "metadata": request.metadata,
+                "reader": request.reader,
+                "chunker": request.chunker,
                 "vectordb": request.vectordb or {
                     "provider": "pinecone",
                     "config": {
@@ -576,14 +844,92 @@ def create_api_app() -> FastAPI:
                         "environment": "gcp-starter"
                     }
                 },
-                "sources": request.sources
+                "sources": request.sources or []
             }
-            success = knowledge_manager.create_knowledge_base(request.knowledge_id, config)
+            
+            success = create_knowledge_base_with_config(knowledge_id, config)
+            
             return {
-                "message": f"Base de conhecimento '{request.knowledge_id}' criada com sucesso",
-                "knowledge_id": request.knowledge_id,
+                "id": knowledge_id,
+                "message": f"Base de conhecimento '{knowledge_id}' criada com sucesso",
                 "success": success
             }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/mcp", summary="Operações MCP para memórias", tags=["Memória"])
+    async def mcp_endpoint(request: MCPRequest, api_key: str = Depends(verify_api_key)):
+        """Endpoint para operações MCP (Model Context Protocol) relacionadas à memória"""
+        try:
+            user_id = request.user_id or "default_user"
+            
+            if request.action == "add_memory":
+                if not request.content:
+                    raise HTTPException(status_code=400, detail="Conteúdo é obrigatório para adicionar memória")
+                
+                messages = [{"role": "user", "content": request.content}]
+                metadata = {"topic": request.topic} if request.topic else None
+                
+                success = memory_manager.add_memory(
+                    user_id=user_id,
+                    messages=messages,
+                    metadata=metadata
+                )
+                
+                return {
+                    "action": "add_memory",
+                    "success": success,
+                    "user_id": user_id,
+                    "message": "Memória adicionada com sucesso" if success else "Falha ao adicionar memória"
+                }
+            
+            elif request.action == "search_memory":
+                if not request.query:
+                    raise HTTPException(status_code=400, detail="Query é obrigatória para buscar memórias")
+                
+                memories = memory_manager.search_memories(
+                    user_id=user_id,
+                    query=request.query,
+                    limit=request.limit or 5
+                )
+                
+                return {
+                    "action": "search_memory",
+                    "user_id": user_id,
+                    "query": request.query,
+                    "memories": memories,
+                    "total": len(memories)
+                }
+            
+            elif request.action == "get_all_memories":
+                memories = memory_manager.get_all_memories(user_id)
+                
+                return {
+                    "action": "get_all_memories",
+                    "user_id": user_id,
+                    "memories": memories,
+                    "total": len(memories)
+                }
+            
+            elif request.action == "delete_memory":
+                if not request.memory_id:
+                    raise HTTPException(status_code=400, detail="ID da memória é obrigatório para deletar")
+                
+                success = memory_manager.delete_memory(user_id, request.memory_id)
+                
+                return {
+                    "action": "delete_memory",
+                    "success": success,
+                    "user_id": user_id,
+                    "memory_id": request.memory_id,
+                    "message": "Memória removida com sucesso" if success else "Falha ao remover memória"
+                }
+            
+            else:
+                raise HTTPException(status_code=400, detail=f"Ação '{request.action}' não suportada")
+                
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     

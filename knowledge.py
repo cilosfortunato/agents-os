@@ -203,5 +203,45 @@ class KnowledgeManager:
             logger.error(f"Erro ao listar bases de conhecimento: {e}")
             raise HTTPException(status_code=500, detail=f"Erro na listagem: {str(e)}")
 
+    def delete_knowledge_base(self, knowledge_id: str) -> bool:
+        """Remove uma base de conhecimento"""
+        try:
+            if knowledge_id not in self.knowledge_bases:
+                return False
+            
+            del self.knowledge_bases[knowledge_id]
+            logger.info(f"Base de conhecimento '{knowledge_id}' removida com sucesso")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erro ao remover base de conhecimento '{knowledge_id}': {e}")
+            return False
+
+    def get_knowledge_by_id(self, knowledge_id: str) -> Optional[Knowledge]:
+        """Busca uma base de conhecimento pelo ID"""
+        return self.knowledge_bases.get(knowledge_id)
+
 # Instância global do gerenciador
 knowledge_manager = KnowledgeManager()
+
+# Funções auxiliares para compatibilidade com a API
+def get_knowledge_by_id(knowledge_id: str, user_id: str = "default_user") -> Optional[Knowledge]:
+    """Busca uma base de conhecimento pelo ID"""
+    return knowledge_manager.get_knowledge_by_id(knowledge_id)
+
+def create_knowledge_base_with_config(knowledge_id: str, config: Dict[str, Any]) -> bool:
+    """Cria uma nova base de conhecimento com configuração"""
+    return knowledge_manager.create_knowledge_base(knowledge_id, config)
+
+def delete_knowledge_base(knowledge_id: str, user_id: str = "default_user") -> bool:
+    """Remove uma base de conhecimento"""
+    return knowledge_manager.delete_knowledge_base(knowledge_id)
+
+def add_source_to_knowledge(knowledge_id: str, source_id: str, source_type: str, source_path: str, user_id: str = "default_user") -> bool:
+    """Adiciona uma fonte a uma base de conhecimento"""
+    source_config = {
+        "id": source_id,
+        "type": source_type,
+        "path": source_path
+    }
+    return knowledge_manager.add_knowledge_source(knowledge_id, source_config)
