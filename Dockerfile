@@ -16,23 +16,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install poetry
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
-# Configure Poetry
-RUN poetry config virtualenvs.create false
-
-# Copy Poetry files first
-COPY pyproject.toml ./
-
-# Generate lock file and install dependencies
-RUN poetry lock
-RUN poetry install --only=main --no-interaction --no-ansi
-
-# Alternative: If you prefer to use requirements.txt as fallback
-# COPY requirements.txt .
-# RUN pip install --no-cache-dir -r requirements.txt
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

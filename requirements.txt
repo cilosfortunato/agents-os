@@ -1,7 +1,7 @@
 # Dependências principais do AgentOS
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic>=2.7.3,<3.0.0  # Atualizado para compatibilidade com mem0ai
 python-dotenv==1.0.0
 requests==2.31.0
 
