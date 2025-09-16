@@ -6,7 +6,7 @@ python-dotenv==1.0.0
 requests==2.31.0
 
 # Modelos de IA
-openai==1.3.0
+openai>=1.33.0,<2.0.0
 
 # Memória persistente e RAG
 mem0ai==0.1.0

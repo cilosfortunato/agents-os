@@ -19,9 +19,18 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Poetry
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install poetry
+
+# Configure Poetry
+RUN poetry config virtualenvs.create false
+
+# Copy Poetry files
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies with Poetry
+RUN poetry install --no-dev --no-interaction --no-ansi
 
 # Copy application code
 COPY . .
