@@ -143,8 +143,8 @@ def create_api_app() -> FastAPI:
     )
 
     @app.get("/health", response_model=HealthResponse, tags=["Health"])
-    async def health_check(api_key: str = Depends(verify_api_key)):
-        """Endpoint de verificação de saúde da API"""
+    async def health_check():
+        """Endpoint de verificação de saúde da API (sem autenticação para Docker health check)"""
         agents = get_all_agents()
         return HealthResponse(
             status="healthy",
