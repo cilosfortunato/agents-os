@@ -59,25 +59,30 @@ def create_team(name: str, description: str, agent_names: List[str], user_id: st
     except Exception as e:
         raise Exception(f"Erro ao criar time: {str(e)}")
 
-def get_all_teams(user_id: str = "default_user") -> List[Dict[str, Any]]:
-    """Retorna todos os times do usuário"""
-    user_teams = []
+def get_all_teams(account_id: str = None) -> List[Dict[str, Any]]:
+    """Retorna todos os times filtrados por account_id se fornecido"""
+    teams_list = []
     for team_data in teams_storage.values():
-        if team_data["user_id"] == user_id:
-            user_teams.append({
+        # Se account_id for fornecido, filtra por ele
+        if account_id is None or team_data.get("account_id") == account_id:
+            teams_list.append({
                 "id": team_data["id"],
                 "name": team_data["name"],
                 "description": team_data["description"],
                 "agents": team_data["agent_names"],
                 "created_at": team_data["created_at"],
-                "updated_at": team_data["updated_at"]
+                "updated_at": team_data["updated_at"],
+                "account_id": team_data.get("account_id")
             })
-    return user_teams
+    return teams_list
 
-def get_team_by_id(team_id: str, user_id: str = "default_user") -> Optional[Dict[str, Any]]:
+def get_team_by_id(team_id: str, account_id: str = None) -> Optional[Dict[str, Any]]:
     """Busca um time específico pelo ID"""
     team_data = teams_storage.get(team_id)
-    if team_data and team_data["user_id"] == user_id:
+    if team_data:
+        # Se account_id for fornecido, filtra por ele
+        if account_id and team_data.get("account_id") != account_id:
+            return None
         return {
             "id": team_data["id"],
             "name": team_data["name"],
@@ -88,10 +93,13 @@ def get_team_by_id(team_id: str, user_id: str = "default_user") -> Optional[Dict
         }
     return None
 
-def get_team_instance_by_id(team_id: str, user_id: str = "default_user") -> Optional[Team]:
+def get_team_instance_by_id(team_id: str, account_id: str = None) -> Optional[Team]:
     """Retorna a instância do Team para execução"""
     team_data = teams_storage.get(team_id)
-    if team_data and team_data["user_id"] == user_id:
+    if team_data:
+        # Se account_id for fornecido, filtra por ele
+        if account_id and team_data.get("account_id") != account_id:
+            return None
         return team_data["team_instance"]
     return None
 
@@ -147,30 +155,16 @@ def delete_team(team_id: str, user_id: str = "default_user") -> bool:
         return True
     return False
 
-def run_team(team_id: str, message: str, user_id: str = "default_user") -> str:
+def run_team(team_id: str, message: str, account_id: str = None) -> str:
     """Executa um time com uma mensagem"""
-    team = get_team_instance_by_id(team_id, user_id)
+    team = get_team_instance_by_id(team_id, account_id)
     if not team:
         raise ValueError(f"Time com ID '{team_id}' não encontrado")
     
     try:
-        # Busca memórias relevantes antes da execução
-        print(f"[DEBUG] Iniciando busca de memória para team_id: {team_id}, user_id: {user_id}")
-        memory_context = get_team_memory_context(team_id, user_id, message)
-        
-        # Adiciona contexto de memória à mensagem se houver
-        enhanced_message = message
-        if memory_context:
-            enhanced_message = f"Contexto de conversas anteriores:\n{memory_context}\n\nMensagem atual: {message}"
-            print(f"[DEBUG] Mensagem com contexto: {enhanced_message}")
-        else:
-            print(f"[DEBUG] Nenhum contexto de memória encontrado")
-        
-        response = team.run(enhanced_message)
+        # Executa o time apenas com a mensagem
+        response = team.run(message)
         response_content = response.content if hasattr(response, 'content') else str(response)
-        
-        # Salva a interação na memória Mem0
-        save_team_memory(team_id, user_id, message, response_content)
         
         return response_content
     except Exception as e:

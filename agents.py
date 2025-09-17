@@ -59,7 +59,7 @@ def create_model():
     else:
         return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
 
-def create_assistente_principal(user_id: str = "default_user"):
+def create_assistente_principal():
     """Cria o agente assistente principal usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     return AgentClass(
@@ -74,7 +74,7 @@ def create_assistente_principal(user_id: str = "default_user"):
         markdown=True
     )
 
-def create_agente_pesquisa(user_id: str = "default_user"):
+def create_agente_pesquisa():
     """Cria o agente especializado em pesquisa usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
@@ -92,7 +92,7 @@ def create_agente_pesquisa(user_id: str = "default_user"):
         markdown=True
     )
 
-def create_agente_tecnico(user_id: str = "default_user"):
+def create_agente_tecnico():
     """Cria o agente especializado em questões técnicas usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     ToolsClass = DuckDuckGoTools if AGNO_AVAILABLE else MockDuckDuckGoTools
@@ -110,7 +110,7 @@ def create_agente_tecnico(user_id: str = "default_user"):
         markdown=True
     )
 
-def create_agente_saudacao(user_id: str = "default_user"):
+def create_agente_saudacao():
     """Cria o agente especializado em saudações e atendimento inicial usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     return AgentClass(
@@ -127,7 +127,7 @@ def create_agente_saudacao(user_id: str = "default_user"):
         markdown=True
     )
 
-def create_agente_vendas_kit_festas(user_id: str = "default_user"):
+def create_agente_vendas_kit_festas():
     """Cria o agente especializado em vendas de kit festas usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
     return AgentClass(
@@ -146,15 +146,22 @@ def create_agente_vendas_kit_festas(user_id: str = "default_user"):
         markdown=True
     )
 
-def get_all_agents(user_id: str = "default_user"):
-    """Retorna todos os agentes disponíveis com memória Mem0 configurada"""
-    return [
-        create_assistente_principal(user_id=user_id),
-        create_agente_pesquisa(user_id=user_id),
-        create_agente_tecnico(user_id=user_id),
-        create_agente_saudacao(user_id=user_id),
-        create_agente_vendas_kit_festas(user_id=user_id)
+def get_all_agents(account_id: str = None):
+    """Retorna todos os agentes disponíveis (padrão + personalizados)"""
+    agents = [
+        create_assistente_principal(),
+        create_agente_pesquisa(),
+        create_agente_tecnico(),
+        create_agente_saudacao(),
+        create_agente_vendas_kit_festas()
     ]
+    
+    # Adiciona agentes personalizados filtrados por account_id se fornecido
+    for agent_data in custom_agents_storage.values():
+        if account_id is None or agent_data.get("account_id") == account_id:
+            agents.append(agent_data["agent"])
+    
+    return agents
 
 def save_agent_memory(user_id: str, messages: list):
     """Placeholder para salvar memória - implementação futura"""
@@ -261,10 +268,10 @@ def get_agent_by_name(name: str, user_id: str = "default_user"):
     
     return None
 
-def get_agent_by_id(agent_id: str, user_id: str = "default_user"):
+def get_agent_by_id(agent_id: str, account_id: str = None):
     """Busca um agente pelo ID (padrão ou personalizado) usando AgentOS"""
     # Primeiro busca nos agentes padrão
-    agents = get_all_agents(user_id=user_id)
+    agents = get_all_agents()
     for agent in agents:
         if hasattr(agent, 'id') and agent.id == agent_id:
             return agent
@@ -275,13 +282,16 @@ def get_agent_by_id(agent_id: str, user_id: str = "default_user"):
     
     # Depois busca nos agentes personalizados
     for agent_key, agent_data in custom_agents_storage.items():
-        if agent_data["user_id"] == user_id:
-            agent = agent_data["agent"]
-            if hasattr(agent, 'id') and agent.id == agent_id:
-                return agent
-            # Fallback para nome se não tiver ID
-            agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
-            if agent_name == agent_id:
-                return agent
+        # Se account_id for fornecido, filtra por ele
+        if account_id and agent_data.get("account_id") != account_id:
+            continue
+            
+        agent = agent_data["agent"]
+        if hasattr(agent, 'id') and agent.id == agent_id:
+            return agent
+        # Fallback para nome se não tiver ID
+        agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
+        if agent_name == agent_id:
+            return agent
     
     return None

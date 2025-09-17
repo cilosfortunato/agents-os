@@ -1,0 +1,6 @@
+{
+  "name": "Time Teste",
+  "agents": ["Assistente Principal"],
+  "instructions": "Este é um time de teste para validar a API.",
+  "user_id": "test_user"
+}

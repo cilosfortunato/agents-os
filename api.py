@@ -58,17 +58,33 @@ class AgentResponse(BaseModel):
     user_id: str
 
 class AgentCreateRequest(BaseModel):
-    id: Optional[str] = Field(None, description="UUID opcional para o agente")
-    name: str
-    model: Dict[str, str] = Field({"provider": "openai", "name": "gpt-4o-mini"}, description="Configuração do modelo")
-    system_message: str = Field(..., description="Mensagem de sistema do agente")
-    enable_user_memories: bool = Field(True, description="Habilitar memórias do usuário")
-    tools: List[str] = Field(["DuckDuckGoTools"], description="Ferramentas disponíveis")
-    add_history_to_context: bool = Field(True, description="Adicionar histórico ao contexto")
-    num_history_runs: int = Field(5, description="Número de execuções no histórico")
-    add_datetime_to_context: bool = Field(True, description="Adicionar data/hora ao contexto")
-    markdown: bool = Field(True, description="Usar formatação markdown")
-    user_id: Optional[str] = "default_user"
+    id: Optional[str] = Field(None, description="UUID opcional para o agente", example="550e8400-e29b-41d4-a716-446655440000")
+    name: str = Field(..., description="Nome do agente", example="Assistente de Vendas")
+    model: Dict[str, str] = Field(
+        {"provider": "openai", "name": "gpt-4o-mini"}, 
+        description="Configuração do modelo",
+        example={"provider": "openai", "name": "gpt-4o-mini"}
+    )
+    system_message: str = Field(
+        ..., 
+        description="Mensagem de sistema do agente",
+        example="Você é um assistente especializado em vendas. Seja sempre prestativo e profissional."
+    )
+    enable_user_memories: bool = Field(
+        True, 
+        description="Habilitar memórias do usuário",
+        example=True
+    )
+    tools: List[str] = Field(
+        ["DuckDuckGoTools"], 
+        description="Ferramentas disponíveis",
+        example=["DuckDuckGoTools"]
+    )
+    account_id: Optional[str] = Field(
+        None, 
+        description="UUID da conta para controle de acesso",
+        example="f7dae33c-6364-4d88-908f-f5f64426a5c9"
+    )
 
 class AgentUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -80,7 +96,7 @@ class TeamCreateRequest(BaseModel):
     name: str
     agents: List[str] = Field(..., description="Lista de IDs dos agentes")
     instructions: str = Field(..., description="Instruções para o time")
-    user_id: Optional[str] = "default_user"
+    account_id: Optional[str] = Field(None, description="UUID da conta para controle de acesso")
 
 class TeamUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -126,13 +142,25 @@ class KnowledgeCreateRequest(BaseModel):
     sources: List[Dict[str, Any]] = []
 
 class AgentRunRequest(BaseModel):
-    message: str = Field(..., description="Mensagem para o agente")
-    user_id: Optional[str] = Field("default_user", description="ID do usuário")
-    session_id: Optional[str] = Field(None, description="ID da sessão")
+    message: str = Field(
+        ..., 
+        description="Mensagem para o agente",
+        example="Qual é o futuro da IA?"
+    )
+    user_id: str = Field(
+        ..., 
+        description="ID do usuário para mensagens",
+        example="user_especifico_456"
+    )
+    session_id: Optional[str] = Field(
+        None, 
+        description="ID da sessão",
+        example="session_123"
+    )
 
 class TeamRunRequest2(BaseModel):
     message: str = Field(..., description="Mensagem para o time")
-    user_id: Optional[str] = Field("default_user", description="ID do usuário")
+    user_id: str = Field(..., description="ID do usuário para mensagens")
     session_id: Optional[str] = Field(None, description="ID da sessão")
 
 class MCPRequest(BaseModel):
@@ -227,7 +255,21 @@ def create_api_app() -> FastAPI:
         return {"message": "Chat realizado com sucesso", "response": response_content, "user_id": user_id}
 
     # Endpoints CRUD para Agentes
-    @app.post("/agents", summary="Criar novo agente", tags=["Agentes"])
+    @app.post("/agents", summary="Criar novo agente", tags=["Agentes"],
+              responses={
+                  200: {
+                      "description": "Agente criado com sucesso",
+                      "content": {
+                          "application/json": {
+                              "example": {
+                                  "message": "Agente criado com sucesso",
+                                  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+                                  "name": "Assistente de Vendas"
+                              }
+                          }
+                      }
+                  }
+              })
     async def create_agent(request: AgentCreateRequest, api_key: str = Depends(verify_api_key)):
         """Cria um novo agente personalizado"""
         try:
@@ -241,11 +283,12 @@ def create_api_app() -> FastAPI:
                 system_message=request.system_message,
                 enable_user_memories=request.enable_user_memories,
                 tools=request.tools,
-                add_history_to_context=request.add_history_to_context,
-                num_history_runs=request.num_history_runs,
-                add_datetime_to_context=request.add_datetime_to_context,
-                markdown=request.markdown,
-                user_id=request.user_id
+                # Valores padrão para campos removidos
+                add_history_to_context=True,
+                num_history_runs=5,
+                add_datetime_to_context=True,
+                markdown=True,
+                user_id=request.account_id or "default_user"
             )
             return {
                 "message": "Agente criado com sucesso",
@@ -256,29 +299,25 @@ def create_api_app() -> FastAPI:
                     "system_message": request.system_message,
                     "enable_user_memories": request.enable_user_memories,
                     "tools": request.tools,
-                    "add_history_to_context": request.add_history_to_context,
-                    "num_history_runs": request.num_history_runs,
-                    "add_datetime_to_context": request.add_datetime_to_context,
-                    "markdown": request.markdown,
-                    "user_id": request.user_id
+                    "account_id": request.account_id
                 }
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/agents", summary="Listar todos os agentes", tags=["Agentes"])
-    async def list_agents(user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
-        """Lista todos os agentes (padrão + personalizados)"""
+    async def list_agents(account_id: str = None, api_key: str = Depends(verify_api_key)):
+        """Lista todos os agentes (padrão + personalizados) filtrados por account_id"""
         try:
             # Agentes padrão
-            default_agents = get_all_agents(user_id=user_id)
+            default_agents = get_all_agents(account_id=account_id)
             default_agents_data = []
             for agent in default_agents:
                 default_agents_data.append({
                     "name": agent.config.name,
                     "role": getattr(agent, 'role', 'Agente'),
                     "instructions": getattr(agent, 'instructions', []),
-                    "user_id": user_id,
+                    "account_id": account_id,
                     "type": "default"
                 })
             
@@ -286,13 +325,13 @@ def create_api_app() -> FastAPI:
             from agents import custom_agents_storage
             custom_agents_data = []
             for agent_key, agent_data in custom_agents_storage.items():
-                if agent_data["user_id"] == user_id:
+                if not account_id or agent_data.get("account_id") == account_id:
                     custom_agents_data.append({
                         "id": agent_data.get("id", agent_key),
                         "name": agent_data["name"],
                         "role": agent_data.get("role", "Agente Personalizado"),
                         "instructions": agent_data.get("instructions", []),
-                        "user_id": user_id,
+                        "account_id": agent_data.get("account_id"),
                         "type": "custom",
                         "model": agent_data.get("model", {}),
                         "system_message": agent_data.get("system_message", ""),
@@ -415,19 +454,44 @@ def create_api_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/agents/{agent_id}/run", summary="Executar agente", tags=["Agentes"])
+    @app.post("/agents/{agent_id}/run", summary="Executar agente", tags=["Agentes"],
+              responses={
+                  200: {
+                      "description": "Resposta do agente",
+                      "content": {
+                          "application/json": {
+                              "example": {
+                                  "messages": ["Olá! Como posso ajudá-lo hoje?"],
+                                  "transferir": False,
+                                  "session_id": "session_123",
+                                  "user_id": "user_especifico_456",
+                                  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+                                  "custom": [],
+                                  "agent_usage": {
+                                      "input_tokens": 15,
+                                      "output_tokens": 8,
+                                      "model": "gpt-4o-mini"
+                                  }
+                              }
+                          }
+                      }
+                  }
+              })
     async def run_agent(agent_id: str, request: AgentRunRequest, api_key: str = Depends(verify_api_key)):
         """Executa um agente específico com uma mensagem"""
         try:
-            agent = get_agent_by_id(agent_id, user_id=request.user_id or "default_user")
+            agent = get_agent_by_id(agent_id)
             if not agent:
                 raise HTTPException(status_code=404, detail="Agente não encontrado")
             
-            # Executa o agente com a mensagem
-            response = agent.run(request.message, user_id=request.user_id, session_id=request.session_id)
+            # Executa o agente apenas com a mensagem
+            response = agent.run(request.message)
+            
+            # Extrai o conteúdo da resposta se for um objeto
+            response_content = response.content if hasattr(response, 'content') else str(response)
             
             return {
-                "messages": [response],
+                "messages": [response_content],
                 "transferir": False,
                 "session_id": request.session_id,
                 "user_id": request.user_id,
@@ -472,10 +536,10 @@ def create_api_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/teams", summary="Listar todos os times", tags=["Times"])
-    async def list_teams(user_id: str = "default_user", api_key: str = Depends(verify_api_key)):
-        """Lista todos os times do usuário"""
+    async def list_teams(account_id: str = None, api_key: str = Depends(verify_api_key)):
+        """Lista todos os times filtrados por account_id"""
         try:
-            teams = get_all_teams(user_id=user_id)
+            teams = get_all_teams(account_id=account_id)
             teams_data = []
             
             for team_data in teams:
@@ -484,7 +548,7 @@ def create_api_app() -> FastAPI:
                      "name": team_data["name"],
                      "description": team_data["description"],
                      "agent_names": team_data["agents"],
-                     "user_id": team_data.get("user_id", "default_user")
+                     "account_id": team_data.get("account_id")
                  })
             
             return {
@@ -563,18 +627,18 @@ def create_api_app() -> FastAPI:
     async def run_team_endpoint(team_id: str, request: TeamRunRequest2, api_key: str = Depends(verify_api_key)):
         """Executa um time específico com uma mensagem"""
         try:
-            team = get_team_by_id(team_id, user_id=request.user_id or "default_user")
+            team = get_team_by_id(team_id)
             if not team:
                 raise HTTPException(status_code=404, detail="Time não encontrado")
             
-            response = run_team(
-                team_id=team_id,
-                message=request.message,
-                user_id=request.user_id
-            )
+            # Executa o time apenas com a mensagem
+            response = run_team(team_id, request.message)
+            
+            # Extrai o conteúdo da resposta se for um objeto
+            response_content = response.content if hasattr(response, 'content') else str(response)
             
             return {
-                "messages": [response],
+                "messages": [response_content],
                 "transferir": False,
                 "session_id": request.session_id,
                 "user_id": request.user_id,
