@@ -236,12 +236,19 @@ def update_custom_agent(name: str, new_name: str = None, role: str = None, instr
     
     return updated_agent
 
-def delete_custom_agent(name: str, user_id: str = "default_user"):
-    """Remove um agente personalizado"""
-    agent_key = f"{user_id}_{name}"
-    if agent_key in custom_agents_storage:
-        del custom_agents_storage[agent_key]
-        return True
+def delete_custom_agent(agent_id: str, user_id: str = "default_user"):
+    """Remove um agente personalizado pelo ID"""
+    # Busca o agente pelo ID
+    for agent_key, agent_data in list(custom_agents_storage.items()):
+        agent = agent_data["agent"]
+        if hasattr(agent, 'id') and agent.id == agent_id:
+            del custom_agents_storage[agent_key]
+            return True
+        # Fallback para nome se não tiver ID
+        agent_name = getattr(agent.config, 'name', None) if hasattr(agent, 'config') else None
+        if agent_name == agent_id:
+            del custom_agents_storage[agent_key]
+            return True
     return False
 
 def get_custom_agents(user_id: str = "default_user"):

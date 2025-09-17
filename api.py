@@ -51,11 +51,7 @@ class HealthResponse(BaseModel):
     message: str
     agents_count: int
 
-class AgentResponse(BaseModel):
-    name: str
-    role: str
-    instructions: List[str]
-    user_id: str
+# Classe AgentResponse removida - usando estrutura direta nos endpoints
 
 class AgentCreateRequest(BaseModel):
     id: Optional[str] = Field(None, description="UUID opcional para o agente", example="550e8400-e29b-41d4-a716-446655440000")
@@ -88,8 +84,10 @@ class AgentCreateRequest(BaseModel):
 
 class AgentUpdateRequest(BaseModel):
     name: Optional[str] = None
-    role: Optional[str] = None
-    instructions: Optional[List[str]] = None
+    model: Optional[Dict[str, str]] = None
+    system_message: Optional[str] = None
+    enable_user_memories: Optional[bool] = None
+    tools: Optional[List[str]] = None
 
 class TeamCreateRequest(BaseModel):
     id: Optional[str] = Field(None, description="UUID opcional para o time")
@@ -309,17 +307,21 @@ def create_api_app() -> FastAPI:
     async def list_agents(account_id: str = None, api_key: str = Depends(verify_api_key)):
         """Lista todos os agentes (padrão + personalizados) filtrados por account_id"""
         try:
-            # Agentes padrão
-            default_agents = get_all_agents(account_id=account_id)
+            # Agentes padrão - só incluir se account_id não for fornecido
             default_agents_data = []
-            for agent in default_agents:
-                default_agents_data.append({
-                    "name": agent.config.name,
-                    "role": getattr(agent, 'role', 'Agente'),
-                    "instructions": getattr(agent, 'instructions', []),
-                    "account_id": account_id,
-                    "type": "default"
-                })
+            if not account_id:
+                default_agents = get_all_agents()
+                for agent in default_agents:
+                    default_agents_data.append({
+                        "id": getattr(agent, 'id', str(uuid.uuid4())),
+                        "name": agent.config.name,
+                        "model": {"provider": "openai", "name": "gpt-4o-mini"},
+                        "system_message": getattr(agent, 'system_message', ''),
+                        "enable_user_memories": True,
+                        "tools": getattr(agent, 'tools', []),
+                        "account_id": None,
+                        "type": "default"
+                    })
             
             # Agentes personalizados
             from agents import custom_agents_storage
@@ -329,13 +331,12 @@ def create_api_app() -> FastAPI:
                     custom_agents_data.append({
                         "id": agent_data.get("id", agent_key),
                         "name": agent_data["name"],
-                        "role": agent_data.get("role", "Agente Personalizado"),
-                        "instructions": agent_data.get("instructions", []),
-                        "account_id": agent_data.get("account_id"),
-                        "type": "custom",
-                        "model": agent_data.get("model", {}),
+                        "model": agent_data.get("model", {"provider": "openai", "name": "gpt-4o-mini"}),
                         "system_message": agent_data.get("system_message", ""),
-                        "tools": agent_data.get("tools", [])
+                        "enable_user_memories": agent_data.get("enable_user_memories", True),
+                        "tools": agent_data.get("tools", []),
+                        "account_id": agent_data.get("account_id"),
+                        "type": "custom"
                     })
             
             return {
@@ -372,7 +373,7 @@ def create_api_app() -> FastAPI:
                     }
             
             # Se não encontrou nos personalizados, busca nos padrão
-            agent = get_agent_by_id(agent_id, user_id=user_id)
+            agent = get_agent_by_id(agent_id)
             if not agent:
                 raise HTTPException(status_code=404, detail="Agente não encontrado")
             

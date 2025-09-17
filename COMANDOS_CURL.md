@@ -26,20 +26,35 @@ curl -X POST "http://localhost:8000/agents" \
   -H "X-API-Key: 151fb361-f295-4a4f-84c9-ec1f42599a67" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Assistente de Vendas",
+    "name": "Assistente de Vendas Estética Vênus",
     "model": {
       "provider": "openai",
       "name": "gpt-4o-mini"
     },
-    "system_message": "Você é um assistente especializado em vendas. Seja sempre prestativo e profissional.",
+    "system_message": "Você é um especialista em beleza e consultor de vendas da Estética Vênus, uma clínica de estética premium especializada em harmonização facial, toxina botulínica e tratamentos rejuvenescedores. Sua missão é entender as necessidades e desejos de cada cliente, oferecendo soluções personalizadas com um atendimento cordial, empático e altamente profissional.",
     "enable_user_memories": true,
     "tools": ["DuckDuckGoTools"],
-    "add_history_to_context": true,
-    "num_history_runs": 5,
-    "add_datetime_to_context": true,
-    "markdown": true,
-    "user_id": "default_user"
+    "account_id": "f7dae33c-6364-4d88-908f-f5f64426a5c9"
   }'
+```
+
+**Resposta esperada:**
+```json
+{
+  "message": "Agente criado com sucesso",
+  "agent": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Assistente de Vendas Estética Vênus",
+    "model": {
+      "provider": "openai",
+      "name": "gpt-4o-mini"
+    },
+    "system_message": "Você é um especialista em beleza...",
+    "enable_user_memories": true,
+    "tools": ["DuckDuckGoTools"],
+    "account_id": "f7dae33c-6364-4d88-908f-f5f64426a5c9"
+  }
+}
 ```
 
 ## 4. Criar Time
