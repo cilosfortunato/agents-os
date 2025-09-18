@@ -254,17 +254,46 @@ class SupabaseService:
         
         Args:
             user_id: ID do usuário
-            query: Termo de busca
+            query: Termo(s) de busca. Suporta múltiplos termos separados por '|'
             limit: Número máximo de resultados (padrão: 10)
         
         Returns:
-            Lista de mensagens que contêm o termo buscado
+            Lista de mensagens que contêm o(s) termo(s) buscado(s)
         """
         try:
+            # Suporte a múltiplos termos: "termo1|termo2|termo3"
+            raw = (query or "").strip()
+            if "|" in raw:
+                terms = [t.strip() for t in raw.split("|") if t.strip()]
+            else:
+                terms = [raw] if raw else []
+            # Remove duplicatas preservando ordem
+            seen = set()
+            unique_terms = []
+            for t in terms:
+                if t not in seen:
+                    seen.add(t)
+                    unique_terms.append(t)
+            
+            # Constrói as cláusulas OR para cada termo em ambos os campos
+            or_clauses = []
+            for term in unique_terms:
+                # evita vírgulas que quebram o formato da cláusula
+                safe_term = term.replace(",", " ")
+                like = f"%{safe_term}%"
+                or_clauses.append(f"user_message.ilike.{like}")
+                or_clauses.append(f"agent_response.ilike.{like}")
+            
+            # Se não houver termos válidos, retorna vazio
+            if not or_clauses:
+                return []
+            
+            or_str = ",".join(or_clauses)
+            
             result = self.supabase.table("mensagens_ia")\
                 .select("*")\
                 .eq("user_id", user_id)\
-                .or_(f"user_message.ilike.%{query}%,agent_response.ilike.%{query}%")\
+                .or_(or_str)\
                 .order("created_at", desc=True)\
                 .limit(limit)\
                 .execute()

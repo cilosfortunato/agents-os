@@ -4,7 +4,7 @@ API Completa com AgentOS, Knowledge (RAG) e Memória (Mem0)
 Baseada no guia definitivo do AgentOS
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Header
+from fastapi import FastAPI, HTTPException, Depends, Query, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
@@ -14,10 +14,12 @@ import requests
 import uuid
 from datetime import datetime
 import json
+import time
 
 # Importações para IA e memória
 import openai
 from mem0 import MemoryClient
+import redis
 
 # Importação dos serviços
 from supabase_service import SupabaseService
@@ -31,6 +33,60 @@ INTERNAL_API_KEY = "151fb361-f295-4a4f-84c9-ec1f42599a67"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 MEM0_API_KEY = os.getenv("MEM0_API_KEY")
+REDIS_URL = os.getenv("REDIS_URL", "")
+OUTBOUND_WEBHOOK_URL = os.getenv("OUTBOUND_WEBHOOK_URL", "https://webhook.doxagrowth.com.br/webhook/recebimentos-mensagens-agentos")
+WEBHOOK_API_KEY = os.getenv("OUTBOUND_WEBHOOK_API_KEY", "")
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY  # Compat para SDKs antigos que usam openai.ChatCompletion
+
+# Helper compatível para chamadas OpenAI (Responses API nova ou Chat Completions legado)
+def _complete_with_openai(system_prompt: str, user_query: str, model_id: str, temperature: float = 0.7, max_tokens: int = 1000) -> str:
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_query},
+    ]
+    # Tenta a Responses API (SDK v1+)
+    try:
+        if hasattr(openai_client, "responses"):
+            resp = openai_client.responses.create(
+                model=model_id,
+                input=messages,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+            text = getattr(resp, "output_text", None)
+            if not text:
+                try:
+                    text = resp.outputs[0].content[0].text  # fallback de extração
+                except Exception:
+                    text = None
+            if text:
+                return text
+    except Exception:
+        pass
+    # Tenta Chat Completions do SDK v1 (openai.chat.completions)
+    try:
+        if hasattr(openai, "chat") and hasattr(openai.chat, "completions"):
+            resp = openai.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return resp.choices[0].message.content
+    except Exception:
+        pass
+    # Tenta ChatCompletion legado (SDK v0)
+    try:
+        resp = openai.ChatCompletion.create(
+            model=model_id,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return resp["choices"][0]["message"]["content"]
+    except Exception as e:
+        raise e
 
 # Função de verificação de API Key
 async def verify_api_key(x_api_key: str = Header(None)):
@@ -66,7 +122,7 @@ class MessageRequest(BaseModel):
     message_id: Optional[str] = Field(None, description="ID da mensagem")
     cliente_id: Optional[str] = Field("", description="ID do cliente")
     id_conta: Optional[str] = Field(None, description="ID da conta")
-    debounce: Optional[int] = Field(15000, description="Tempo de debounce em ms")
+    debounce: Optional[int] = Field(0, description="Tempo de debounce em ms")
 
 # Modelos de dados para Agentes
 class AgentCreateRequest(BaseModel):
@@ -152,6 +208,22 @@ app = FastAPI(
         }
     ]
 )
+
+# Webhook fake local para testes de debounce
+_last_webhook_payload: Optional[Dict[str, Any]] = None
+
+@app.post("/fake-webhook", tags=["Status"], summary="Webhook fake para testes")
+async def fake_webhook(payload: dict, request: Request):
+    """Recebe o payload do debounce e armazena em memória para inspeção."""
+    global _last_webhook_payload
+    _last_webhook_payload = payload
+    # Opcional: log rápido para depuração
+    print("[fake-webhook] payload recebido:", json.dumps(payload)[:500])
+    return {"status": "received", "received_at": datetime.now().isoformat()}
+
+@app.get("/fake-webhook/last", tags=["Status"], summary="Último payload recebido no webhook fake")
+async def get_last_webhook_payload():
+    return _last_webhook_payload or {}
 
 # Instancia o serviço do Supabase
 supabase_service = SupabaseService()
@@ -242,6 +314,225 @@ class MemoryService:
         memory_db[user_id].append(memory_entry)
         return True
 
+# Cliente Redis (opcional)
+redis_client = None
+if REDIS_URL:
+    try:
+        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        # Teste simples de conexão
+        redis_client.ping()
+    except Exception:
+        redis_client = None
+
+# Estruturas de fallback em memória
+_inmemory_buffers = {}
+_inmemory_deadlines = {}
+_inmemory_locks = {}
+
+class DebounceManager:
+    def __init__(self, redis_cli=None, default_ms: int = 15000):
+        self.redis = redis_cli
+        self.default_ms = default_ms
+
+    def _keys(self, base_key: str):
+        msgs_key = f"db:{base_key}:messages"
+        deadline_key = f"db:{base_key}:deadline"
+        lock_key = f"db:{base_key}:lock"
+        return msgs_key, deadline_key, lock_key
+
+    def add_message(self, base_key: str, message_obj: dict, window_ms: int):
+        ms = window_ms if (window_ms is not None and window_ms >= 0) else self.default_ms
+        now = time.time()
+        deadline = now + (ms / 1000.0)
+        if self.redis:
+            msgs_key, deadline_key, _ = self._keys(base_key)
+            pipe = self.redis.pipeline()
+            pipe.rpush(msgs_key, json.dumps(message_obj))
+            pipe.set(deadline_key, str(deadline))
+            # Expiração de segurança (5x janela + 60s)
+            expire_sec = max(int(ms / 1000) * 5 + 60, 120)
+            pipe.expire(msgs_key, expire_sec)
+            pipe.expire(deadline_key, expire_sec)
+            pipe.execute()
+        else:
+            buf = _inmemory_buffers.setdefault(base_key, [])
+            buf.append(message_obj)
+            _inmemory_deadlines[base_key] = deadline
+
+    def _acquire_lock(self, base_key: str, ttl_sec: int = 60) -> bool:
+        if self.redis:
+            _, _, lock_key = self._keys(base_key)
+            try:
+                return bool(self.redis.set(lock_key, "1", nx=True, ex=ttl_sec))
+            except Exception:
+                return False
+        # Fallback em memória
+        if _inmemory_locks.get(base_key):
+            return False
+        _inmemory_locks[base_key] = True
+        return True
+
+    def _release_lock(self, base_key: str):
+        if self.redis:
+            _, _, lock_key = self._keys(base_key)
+            try:
+                self.redis.delete(lock_key)
+            except Exception:
+                pass
+        else:
+            _inmemory_locks.pop(base_key, None)
+
+    def _get_deadline(self, base_key: str) -> float:
+        if self.redis:
+            _, deadline_key, _ = self._keys(base_key)
+            val = self.redis.get(deadline_key)
+            try:
+                return float(val) if val is not None else 0.0
+            except Exception:
+                return 0.0
+        return float(_inmemory_deadlines.get(base_key, 0.0))
+
+    def _drain_messages(self, base_key: str) -> list:
+        if self.redis:
+            msgs_key, deadline_key, _ = self._keys(base_key)
+            try:
+                msgs = self.redis.lrange(msgs_key, 0, -1) or []
+                self.redis.delete(msgs_key)
+                self.redis.delete(deadline_key)
+                out = []
+                for m in msgs:
+                    try:
+                        out.append(json.loads(m))
+                    except Exception:
+                        pass
+                return out
+            except Exception:
+                return []
+        # fallback
+        msgs = _inmemory_buffers.pop(base_key, [])
+        _inmemory_deadlines.pop(base_key, None)
+        return msgs
+
+    def process_when_ready(self, base_key: str, handler_fn, poll_interval: float = 0.5):
+        # Evita múltiplos workers simultâneos
+        if not self._acquire_lock(base_key):
+            return
+        try:
+            while True:
+                deadline = self._get_deadline(base_key)
+                now = time.time()
+                if deadline <= 0:
+                    # Nada a processar (limpo por outro worker)
+                    return
+                delta = deadline - now
+                if delta > 0:
+                    time.sleep(min(delta, poll_interval))
+                    continue
+                # Deadline atingido: drena e processa
+                messages = self._drain_messages(base_key)
+                if messages:
+                    handler_fn(messages)
+                return
+        finally:
+            self._release_lock(base_key)
+
+# Instância do debounce manager
+debounce_manager = DebounceManager(redis_cli=redis_client)
+
+# Função handler que será chamada quando a janela de debounce expirar
+def _debounce_handler_factory(agent_id: str, user_id: str, session_id: str):
+    def _handler(msg_list: list):
+        # msg_list é uma lista de objetos do request original
+        try:
+            # Buscar dados do agente
+            try:
+                agent = supabase_service.get_agent(agent_id)
+                if not agent:
+                    raise Exception("Agente não encontrado")
+            except Exception as e:
+                # Fallback resiliente: tenta listar agentes e, se falhar, usa defaults
+                try:
+                    agents = supabase_service.list_all_agents()
+                    agent = agents[0] if agents else None
+                except Exception as e2:
+                    agent = None
+                if not agent:
+                    agent = {"name": "Agente", "model": "gpt-4o-mini", "role": "assistente", "instructions": []}
+
+            # Combinar mensagens (ordem de recebimento)
+            incoming_texts = [m.get("mensagem", "") for m in msg_list if isinstance(m, dict)]
+            combined_query = "\n".join(incoming_texts).strip()
+            last_message = incoming_texts[-1] if incoming_texts else ""
+
+            # Recuperar contexto com base no último prompt (mais recente) + histórico combinado como apoio
+            try:
+                memory_context = dual_memory_service.get_complete_context(
+                    user_id=user_id,
+                    session_id=session_id,
+                    query=last_message or combined_query,
+                    session_limit=5,
+                    memory_limit=3
+                )
+            except Exception as e:
+                memory_context = {
+                    "session_context": "",
+                    "enriched_context": "",
+                    "related_history": ""
+                }
+
+            # Executar agente com contexto
+            response_text = execute_agent_with_memory(last_message or combined_query, user_id, agent, memory_context)
+
+            # Salvar memória da interação combinada (não bloquear envio de webhook)
+            try:
+                dual_memory_service.save_complete_interaction(
+                    user_id=user_id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    user_message=combined_query or last_message,
+                    agent_response=response_text,
+                    agent_name=agent.get("name", "Agente")
+                )
+            except Exception:
+                pass
+
+            # Construir payload para webhook
+            payload = {
+                "messages": [response_text],
+                "transferir": False,
+                "session_id": session_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "custom": [],
+                "agent_usage": {
+                    "input_tokens": len((combined_query or last_message).split()),
+                    "output_tokens": len(response_text.split()),
+                    "model": agent.get("model", "gpt-4o-mini")
+                }
+            }
+
+            headers = {
+                "Content-Type": "application/json"
+            }
+            if WEBHOOK_API_KEY:
+                headers["X-API-Key"] = WEBHOOK_API_KEY
+
+            try:
+                resp = requests.post(OUTBOUND_WEBHOOK_URL, headers=headers, data=json.dumps(payload), timeout=15)
+                try:
+                    print(f"[WEBHOOK] Enviado para {OUTBOUND_WEBHOOK_URL} status={resp.status_code}")
+                except Exception:
+                    pass
+            except Exception as e:
+                try:
+                    print(f"[WEBHOOK][ERRO] Falha ao enviar: {e}")
+                except Exception:
+                    pass
+        except Exception:
+            # Logar erro em produção
+            pass
+    return _handler
+
 # Instâncias dos serviços
 knowledge_service = KnowledgeService()
 # Usando o dual_memory_service importado em vez de criar uma nova instância
@@ -251,9 +542,6 @@ memory_service = dual_memory_service
 def execute_agent(query: str, user_id: str, agent_data: dict) -> str:
     """Executa o agente usando OpenAI diretamente"""
     try:
-        # Configura o cliente OpenAI
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        
         # Template de prompt para o agente
         prompt = (
             f"Você é um {agent_data['role']}.\n"
@@ -262,31 +550,23 @@ def execute_agent(query: str, user_id: str, agent_data: dict) -> str:
             f"Responda à pergunta do usuário de forma precisa e profissional.\n\n"
             f"PERGUNTA:\n{query}"
         )
-        
-        # Executa o modelo
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": query}
-            ],
+        # Modelo (remove prefixo openai/ se existir)
+        model_id = (agent_data.get("model") or "openai/gpt-4o-mini").replace("openai/", "")
+        # Geração com helper compatível (Responses API ou Chat Completions)
+        return _complete_with_openai(
+            system_prompt=prompt,
+            user_query=query,
+            model_id=model_id,
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=1000,
         )
-        
-        return response.choices[0].message.content
-        
+
     except Exception as e:
-        # Fallback para resposta simples em caso de erro
         return f"Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente. Erro: {str(e)}"
 
 def execute_agent_with_memory(query: str, user_id: str, agent_data: dict, memory_context: dict) -> str:
     """Executa agente com contexto de memória dupla usando OpenAI diretamente"""
     try:
-        # Configura o cliente OpenAI
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        
-        # Template de prompt enriquecido com contexto de memória
         system_prompt = f"""Você é {agent_data["role"]}.
 
 INSTRUÇÕES:
@@ -302,22 +582,15 @@ HISTÓRICO RELACIONADO:
 {memory_context.get("search_context", "Nenhum histórico relacionado")}
 
 Responda de forma natural, considerando todo o contexto acima. Se houver informações contraditórias, priorize o contexto da sessão atual."""
-        
-        # Executa o modelo com contexto de memória
-        response = client.chat.completions.create(
-            model=agent_data.get("model", "gpt-4o-mini").replace("openai/", ""),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ],
+        model_id = (agent_data.get("model") or "openai/gpt-4o-mini").replace("openai/", "")
+        return _complete_with_openai(
+            system_prompt=system_prompt,
+            user_query=query,
+            model_id=model_id,
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=1000,
         )
-        
-        return response.choices[0].message.content
-        
     except Exception as e:
-        # Fallback para resposta simples em caso de erro
         return f"Desculpe, ocorreu um erro ao processar sua solicitação com memória. Erro: {str(e)}"
 
 # Função para gerar resposta inteligente com memória dupla
@@ -424,79 +697,82 @@ async def chat_with_agent(request: ChatRequest, api_key: str = Depends(verify_ap
         raise HTTPException(status_code=500, detail=f"Erro no chat: {str(e)}")
 
 @app.post("/v1/messages", tags=["Chat & Mensagens"], summary="Enviar mensagem para agente")
-async def send_message_to_agent(request: MessageRequest, api_key: str = Depends(verify_api_key)) -> MessageResponse:
+async def send_message_to_agent(request: MessageRequest, api_key: str = Depends(verify_api_key), background_tasks: BackgroundTasks = None) -> MessageResponse:
     """
     Endpoint principal para envio de mensagens para agentes inteligentes.
     
-    Este endpoint:
-    - Aceita mensagens no formato compatível com sistemas de chat
-    - Utiliza memória contextual (Mem0) para conversas personalizadas
-    - Integra com base de conhecimento (RAG) para respostas precisas
-    - Retorna resposta estruturada com informações de uso do modelo
-    - Salva automaticamente o histórico da conversa
-    
-    Exemplo de uso:
-    ```json
-    {
-        "mensagem": "Qual horário funciona?",
-        "agent_id": "1677dc47-20d0-442a-80a8-171f00d39d39",
-        "user_id": "116883357474955@lid",
-        "session_id": "645d4334-8660-49b0-813b-872662cd2b7c"
-    }
-    ```
+    Comportamento de debounce: mensagens recebidas dentro da janela (debounce em ms) são agrupadas
+    e processadas em uma única resposta enviada ao webhook de saída.
     """
     try:
+        t0 = time.perf_counter()
         session_id = request.session_id or str(uuid.uuid4())
-        
-        # Verifica se o agente existe no Supabase
+
+        # Apenas valida se existe pelo menos 1 agente (não processa aqui)
         try:
             agent = supabase_service.get_agent(request.agent_id)
             if not agent:
                 raise Exception("Agente não encontrado")
         except Exception:
-            # Se não encontrar o agente específico, usa o primeiro disponível
             agents = supabase_service.list_all_agents()
-            if agents:
-                agent = agents[0]
-            else:
+            if not agents:
                 raise HTTPException(status_code=404, detail="Nenhum agente disponível")
-        
-        # Recupera contexto da memória dupla
-        memory_context = dual_memory_service.get_complete_context(
-            user_id=request.user_id,
-            session_id=session_id,
-            query=request.mensagem,
-            session_limit=5,
-            memory_limit=3
+        t1 = time.perf_counter()
+
+        # Monta chave de agrupamento
+        base_key = f"{request.agent_id}:{request.user_id}:{session_id}"
+        # Define debounce efetivo (permite 0)
+        effective_debounce_ms = request.debounce if request.debounce is not None else 15000
+        # Enfileira a mensagem no buffer e (re)define deadline
+        debounce_manager.add_message(
+            base_key,
+            {
+                "mensagem": request.mensagem,
+                "agent_id": request.agent_id,
+                "user_id": request.user_id,
+                "session_id": session_id,
+                "message_id": request.message_id,
+                "cliente_id": request.cliente_id,
+                "id_conta": request.id_conta,
+                "timestamp": datetime.now().isoformat()
+            },
+            effective_debounce_ms
         )
-        
-        # Executa o agente com contexto de memória
-        response = execute_agent_with_memory(request.mensagem, request.user_id, agent, memory_context)
-        
-        # Salva na memória dupla
-        dual_memory_service.save_complete_interaction(
-            user_id=request.user_id,
-            session_id=session_id,
-            agent_id=request.agent_id,
-            user_message=request.mensagem,
-            agent_response=response,
-            agent_name=agent.get("name", "Agente")
-        )
-        
+        t2 = time.perf_counter()
+
+        # Agenda o worker que aguardará a janela e processará quando expirar
+        if background_tasks is not None:
+            background_tasks.add_task(
+                debounce_manager.process_when_ready,
+                base_key,
+                _debounce_handler_factory(request.agent_id, request.user_id, session_id)
+            )
+        t3 = time.perf_counter()
+
+        # Log de métricas por etapa
+        try:
+            print(
+                "[METRICS] /v1/messages | validação: {:.1f}ms | enqueue: {:.1f}ms | agendamento: {:.1f}ms | total: {:.1f}ms".format(
+                    (t1 - t0) * 1000.0,
+                    (t2 - t1) * 1000.0,
+                    (t3 - t2) * 1000.0,
+                    (t3 - t0) * 1000.0,
+                )
+            )
+        except Exception:
+            pass
+
+        # Retorna ACK imediato informando que a resposta será enviada ao webhook
         return MessageResponse(
-            messages=[response],
+            messages=[f"Debounce iniciado. A resposta será enviada ao webhook em até {int((effective_debounce_ms)/1000)}s se não houver novas mensagens."],
             transferir=False,
             session_id=session_id,
             user_id=request.user_id,
             agent_id=request.agent_id,
             custom=[],
-            agent_usage={
-                "input_tokens": len(request.mensagem.split()),
-                "output_tokens": len(response.split()),
-                "model": agent.get("model", "gpt-4o-mini")
-            }
+            agent_usage=None
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao enviar mensagem: {str(e)}")
 
@@ -733,6 +1009,7 @@ async def health_check():
             "timestamp": datetime.now().isoformat()
         }
 
+# Novo bloco __main__ movido para o final do arquivo, após inicialização do Redis e DebounceManager
 if __name__ == "__main__":
     import uvicorn
     

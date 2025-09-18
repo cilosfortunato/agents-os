@@ -5,6 +5,8 @@ from typing import List, Dict, Any, Optional
 from supabase_service import supabase_service
 from memory import memory_manager
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 class DualMemoryService:
     """
@@ -209,99 +211,93 @@ class DualMemoryService:
                            query: str, session_limit: int = 5, 
                            memory_limit: int = 3) -> Dict[str, str]:
         """
-        Recupera contexto completo de ambas as memórias
-        
-        Args:
-            user_id: ID do usuário
-            session_id: ID da sessão
-            query: Mensagem atual
-            session_limit: Limite de mensagens da sessão
-            memory_limit: Limite de memórias enriquecidas
-        
-        Returns:
-            Dict com contextos de ambas as memórias
+        Recupera contexto completo de ambas as memórias com paralelização
         """
-        # Extrai palavras-chave da query para busca mais inteligente
+        t0 = time.perf_counter()
         search_terms = self._extract_search_terms(query)
-        
-        return {
-            "session_context": self.get_session_context(session_id, session_limit),
-            "enriched_context": self.get_enriched_context(user_id, query, memory_limit),
-            "search_context": self._search_with_multiple_terms(user_id, search_terms, 5)
+
+        results: Dict[str, str] = {
+            "session_context": "",
+            "enriched_context": "",
+            "search_context": ""
         }
-    
-    def _extract_search_terms(self, query: str) -> List[str]:
-        """
-        Extrai termos de busca relevantes da query
-        
-        Args:
-            query: Query original
-            
-        Returns:
-            Lista de termos de busca
-        """
-        # Palavras-chave que indicam busca por informações pessoais
-        personal_keywords = {
-            "nome": ["nome", "chamo", "sou"],
-            "comida": ["gosto", "comer", "comida", "pizza", "preferência"],
-            "informação": ["lembra", "sabe", "conhece", "informação"]
-        }
-        
-        query_lower = query.lower()
-        search_terms = []
-        
-        # Se a query contém palavras sobre nome, busca por nomes comuns
-        if any(word in query_lower for word in personal_keywords["nome"]):
-            search_terms.extend(["nome", "joão", "maria", "carlos", "ana"])
-        
-        # Se a query contém palavras sobre comida, busca por comidas
-        if any(word in query_lower for word in personal_keywords["comida"]):
-            search_terms.extend(["pizza", "comida", "gosto", "preferência"])
-        
-        # Se não encontrou termos específicos, usa palavras da própria query
-        if not search_terms:
-            # Remove palavras muito comuns
-            stop_words = {"o", "a", "de", "do", "da", "que", "e", "é", "se", "você", "eu", "me", "meu", "minha"}
-            words = [word.strip("?!.,") for word in query_lower.split()]
-            search_terms = [word for word in words if len(word) > 2 and word not in stop_words]
-        
-        return search_terms[:3]  # Limita a 3 termos
-    
+
+        def _get_session():
+            return self.get_session_context(session_id, session_limit)
+
+        def _get_enriched():
+            return self.get_enriched_context(user_id, query, memory_limit)
+
+        def _get_search():
+            return self._search_with_multiple_terms(user_id, search_terms, 5)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_map = {
+                executor.submit(_get_session): "session_context",
+                executor.submit(_get_enriched): "enriched_context",
+                executor.submit(_get_search): "search_context",
+            }
+            for fut in as_completed(future_map):
+                key = future_map[fut]
+                try:
+                    results[key] = fut.result()
+                except Exception as e:
+                    logging.warning(f"Falha ao obter {key}: {e}")
+                    results[key] = ""
+        t1 = time.perf_counter()
+        try:
+            logging.info(
+                f"[METRICS] get_complete_context | total: {(t1 - t0)*1000:.1f}ms"
+            )
+        except Exception:
+            pass
+        return results
+
     def _search_with_multiple_terms(self, user_id: str, search_terms: List[str], limit: int = 5) -> str:
         """
-        Busca usando múltiplos termos
-        
-        Args:
-            user_id: ID do usuário
-            search_terms: Lista de termos de busca
-            limit: Limite de resultados
-            
-        Returns:
-            String formatada com resultados
+        Busca usando múltiplos termos com tentativa de query única (OR) e fallback
         """
+        if not search_terms:
+            return "Nenhum termo de busca fornecido."
+
+        # Tenta uma única chamada com termos combinados, se o serviço suportar
+        try:
+            query_str = " | ".join(search_terms)  # usado como sugestão de OR/FTS no service
+            messages = self.supabase.search_messages(user_id, query_str, limit)
+            if messages:
+                # Ordena por data (mais recente primeiro) e limita
+                messages.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                messages = messages[:limit]
+                context_parts = [f"Conversas anteriores relevantes (termos: {', '.join(search_terms)}):"]
+                for msg in messages:
+                    context_parts.append(f"• {msg['user_message']} → {msg['agent_response']}")
+                return "\n".join(context_parts)
+        except Exception as e:
+            logging.warning(f"Falha na busca OR única, aplicando fallback: {e}")
+
+        # Fallback: N chamadas sequenciais, evitando duplicatas
         all_results = []
-        
+        seen = set()
         for term in search_terms:
             try:
-                messages = self.supabase.search_messages(user_id, term, limit)
-                for msg in messages:
-                    # Evita duplicatas
-                    if msg not in all_results:
-                        all_results.append(msg)
+                msgs = self.supabase.search_messages(user_id, term, limit)
             except Exception as e:
                 logging.warning(f"Erro ao buscar por '{term}': {e}")
-        
+                continue
+            for msg in msgs or []:
+                key = (msg.get('id'), msg.get('created_at'))
+                if key not in seen:
+                    seen.add(key)
+                    all_results.append(msg)
+
         if not all_results:
             return f"Nenhuma mensagem anterior encontrada para os termos: {', '.join(search_terms)}"
-        
-        # Ordena por data (mais recente primeiro) e limita
+
         all_results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         limited_results = all_results[:limit]
-        
         context_parts = [f"Conversas anteriores relevantes (termos: {', '.join(search_terms)}):"]
         for msg in limited_results:
             context_parts.append(f"• {msg['user_message']} → {msg['agent_response']}")
-        
         return "\n".join(context_parts)
     
     def get_memory_context(self, user_id: str, query: str = "", limit: int = 5) -> str:
