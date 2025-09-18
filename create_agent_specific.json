@@ -1,0 +1,12 @@
+{
+  "id": "8b1e3e5e-2f3b-4c8a-9e1d-5a6b7c8d9f0a",
+  "name": "Agente Especialista",
+  "model": {
+    "provider": "openai",
+    "name": "gpt-4o-mini"
+  },
+  "system_message": "Você é um assistente especializado e prestativo. Responda sempre de forma clara e objetiva.",
+  "enable_user_memories": true,
+  "tools": ["DuckDuckGoTools"],
+  "account_id": "f7dae33c-6364-4d88-908f-f5f64426a5c9"
+}

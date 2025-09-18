@@ -1,0 +1,11 @@
+{
+  "messages": [
+    {"role": "user", "content": "Olá! Meu nome é João e tenho 30 anos. Trabalho como desenvolvedor."},
+    {"role": "assistant", "content": "Olá João! Prazer em conhecê-lo. Vou lembrar que você tem 30 anos e trabalha como desenvolvedor. Como posso ajudá-lo hoje?"}
+  ],
+  "user_id": "test-user",
+  "metadata": {
+    "session_id": "test-session-123",
+    "timestamp": "2024-01-15T10:30:00Z"
+  }
+}

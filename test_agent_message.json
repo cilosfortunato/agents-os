@@ -1,0 +1,10 @@
+{
+    "mensagem": "Quais são os benefícios do produto X para vendas?",
+    "agent_id": "1624bbdb-6c43-4f3b-b912-4f039fe6902b",
+    "user_id": "user-vendas-123",
+    "session_id": "session-vendas-456",
+    "message_id": "msg-vendas-789",
+    "cliente_id": "cliente-abc",
+    "id_conta": "f7dae33c-6364-4d88-908f-f5f64426a5c9",
+    "debounce": 15000
+}

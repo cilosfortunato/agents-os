@@ -1,0 +1,6 @@
+{
+  "name": "Time de Suporte",
+  "description": "Time especializado em atendimento ao cliente e suporte técnico",
+  "agent_names": ["Agente Técnico", "Agente de Vendas Kit Festas"],
+  "user_id": "default_user"
+}

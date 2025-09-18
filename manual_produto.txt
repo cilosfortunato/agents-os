@@ -1,0 +1,10 @@
+O modo noturno pode ser ativado no menu de configurações > tela.
+A bateria do dispositivo X dura 24 horas com uso moderado.
+Para reiniciar o dispositivo, pressione o botão de energia por 10 segundos.
+A garantia padrão do produto é de 12 meses e cobre defeitos de fabricação.
+O suporte técnico está disponível de segunda a sexta, das 8h às 18h.
+Para atualizar o firmware, acesse configurações > sistema > atualização.
+O dispositivo suporta conectividade Wi-Fi 802.11ac e Bluetooth 5.0.
+A memória interna é de 128GB, expansível até 512GB via cartão microSD.
+O display é de 6.5 polegadas com resolução Full HD+ (2400x1080).
+A câmera principal possui 48MP com estabilização óptica de imagem.

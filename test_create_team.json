@@ -1,0 +1,9 @@
+{
+  "name": "Time de Teste OpenAI",
+  "agents": [
+    "Assistente Principal",
+    "Agente de Pesquisa"
+  ],
+  "instructions": "Trabalhem em colaboração para fornecer respostas completas. O Assistente Principal deve coordenar as respostas e o Agente de Pesquisa deve fornecer informações detalhadas quando necessário.",
+  "user_id": "test-user"
+}
