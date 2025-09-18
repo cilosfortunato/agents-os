@@ -8,6 +8,9 @@ requests>=2.32.3,<3.0.0
 # Modelos de IA
 openai>=1.33.0,<2.0.0
 
+# AgentOS / Agno (inclui integrações com Pinecone)
+agno[pinecone]
+
 # Memória persistente e RAG
 mem0ai==0.1.0
 pinecone-client==3.0.0
@@ -27,5 +30,4 @@ flake8==6.0.0
 # Produção
 gunicorn>=20.1.0,<21.0.0
 
-# Nota: agno[pinecone] removido devido a problemas de compatibilidade
-# Instalar manualmente se necessário: pip install agno[pinecone]
+# Nota: agno[pinecone] foi adicionado para garantir a presença do pacote no container
