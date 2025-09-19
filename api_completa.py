@@ -230,7 +230,6 @@ supabase_service = SupabaseService()
 
 # Simulação de banco de dados em memória para sessões
 sessions_db = {}
-memory_db = {}
 
 # Simulação das funcionalidades de Knowledge e Memória
 class KnowledgeService:
@@ -266,53 +265,45 @@ class KnowledgeService:
         return True
 
 class MemoryService:
-    """Serviço de Memória com Mem0"""
+    """Serviço de Memória com Mem0 - Integrado com dual_memory_service"""
+    
+    def __init__(self):
+        # Usar o dual_memory_service já importado
+        self.dual_memory = dual_memory_service
     
     def save_memory(self, user_id: str, prompt: str, response: str) -> bool:
-        """Salva interação na memória"""
-        if user_id not in memory_db:
-            memory_db[user_id] = []
-        
-        memory_entry = {
-            "id": str(uuid.uuid4()),
-            "prompt": prompt,
-            "response": response,
-            "timestamp": datetime.now().isoformat(),
-            "text": f"Usuário perguntou: '{prompt}' e recebeu: '{response}'"
-        }
-        
-        memory_db[user_id].append(memory_entry)
-        return True
+        """Salva interação na memória usando dual_memory_service"""
+        try:
+            return self.dual_memory.save_complete_interaction(
+                user_id=user_id,
+                session_id=f"direct_session_{user_id}",
+                agent_id="direct_memory",
+                user_message=prompt,
+                agent_response=response,
+                agent_name="Sistema"
+            )
+        except Exception as e:
+            print(f"Erro ao salvar memória: {e}")
+            return False
     
     def search_memory(self, user_id: str, query: str, limit: int = 3) -> List[Dict]:
-        """Busca memórias do usuário"""
-        if user_id not in memory_db:
+        """Busca memórias do usuário usando dual_memory_service"""
+        try:
+            # Usar o método search_memory do dual_memory_service que retorna lista
+            results = self.dual_memory.search_memory(user_id, query, limit)
+            return results
+        except Exception as e:
+            print(f"Erro ao buscar memória: {e}")
             return []
-        
-        query_lower = query.lower()
-        relevant_memories = []
-        
-        for memory in memory_db[user_id]:
-            if any(word in memory["text"].lower() for word in query_lower.split()):
-                relevant_memories.append(memory)
-        
-        return relevant_memories[-limit:]  # Retorna as mais recentes
     
     def add_memory(self, user_id: str, content: str, metadata: Dict = None) -> bool:
-        """Adiciona memória específica"""
-        if user_id not in memory_db:
-            memory_db[user_id] = []
-        
-        memory_entry = {
-            "id": str(uuid.uuid4()),
-            "content": content,
-            "metadata": metadata or {},
-            "timestamp": datetime.now().isoformat(),
-            "text": content
-        }
-        
-        memory_db[user_id].append(memory_entry)
-        return True
+        """Adiciona memória específica usando dual_memory_service"""
+        try:
+            # Usar o método add_memory do dual_memory_service que aceita metadata
+            return self.dual_memory.add_memory(user_id, content, metadata)
+        except Exception as e:
+            print(f"Erro ao adicionar memória: {e}")
+            return False
 
 # Cliente Redis (opcional)
 redis_client = None
@@ -535,8 +526,8 @@ def _debounce_handler_factory(agent_id: str, user_id: str, session_id: str):
 
 # Instâncias dos serviços
 knowledge_service = KnowledgeService()
-# Usando o dual_memory_service importado em vez de criar uma nova instância
-memory_service = dual_memory_service
+# Instanciando o MemoryService que agora usa o dual_memory_service internamente
+memory_service = MemoryService()
 
 # Função para executar agente usando OpenAI diretamente
 def execute_agent(query: str, user_id: str, agent_data: dict) -> str:
@@ -966,7 +957,8 @@ async def add_memory(request: MemoryAddRequest, api_key: str = Depends(verify_ap
 async def get_user_memories(user_id: str, api_key: str = Depends(verify_api_key)):
     """Obtém todas as memórias de um usuário"""
     try:
-        memories = memory_db.get(user_id, [])
+        # Usar o memory_service que agora integra com dual_memory_service
+        memories = memory_service.search_memory(user_id, "", limit=100)  # Busca ampla para obter todas
         return {
             "user_id": user_id,
             "memories": memories,
@@ -999,7 +991,7 @@ async def health_check():
             "statistics": {
                 "total_agents": len(supabase_service.list_all_agents()),
                 "total_sessions": len(sessions_db),
-                "total_users_with_memory": len(memory_db)
+                "memory_service": "integrated_with_dual_memory"
             }
         }
     except Exception as e:

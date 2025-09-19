@@ -1,0 +1,10 @@
+﻿Iniciando teste direto na OpenAI (gpt-4o-mini)
+Conectividade: TcpTestSucceeded=True, Ping~= ms
+OPENAI_API_KEY não encontrada
+Execução 1: ERRO em 807 ms -> O servidor remoto retornou um erro: (401) Não Autorizado.
+Detalhes: { "error": { "message": "You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.", "type": "invalid_request_error", "param": null, "code": null } }
+Execução 2: ERRO em 242 ms -> O servidor remoto retornou um erro: (401) Não Autorizado.
+Detalhes: { "error": { "message": "You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.", "type": "invalid_request_error", "param": null, "code": null } }
+Execução 3: ERRO em 244 ms -> O servidor remoto retornou um erro: (401) Não Autorizado.
+Detalhes: { "error": { "message": "You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.", "type": "invalid_request_error", "param": null, "code": null } }
+FIM

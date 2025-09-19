@@ -371,7 +371,8 @@ class DualMemoryService:
             # Busca no Mem0 (memória externa) se disponível
             if self.mem0:
                 try:
-                    mem0_results = self.mem0.search(query=query, user_id=user_id, limit=limit)
+                    # Usa o MemoryManager para buscar memórias no Mem0
+                    mem0_results = self.mem0.search_memories(user_id=user_id, query=query, limit=limit)
                     for result in mem0_results:
                         memories.append({
                             "source": "mem0",
@@ -402,10 +403,38 @@ class DualMemoryService:
             True se sucesso, False caso contrário
         """
         try:
+            success_mem0 = False
+            success_internal = False
+
+            # Adiciona no Mem0 (memória externa)
             if self.mem0:
-                self.mem0.add(content, user_id=user_id, metadata=metadata or {})
-                return True
-            return False
+                try:
+                    messages = [
+                        {"role": "user", "content": content},
+                        {"role": "assistant", "content": f"Memória registrada: {content}"}
+                    ]
+                    success_mem0 = self.mem0.add_memory(user_id=user_id, messages=messages, metadata=metadata or {})
+                except Exception as e:
+                    logging.warning(f"Erro ao adicionar memória no Mem0: {e}")
+
+            # Também registra na memória interna (Supabase) para garantir busca por texto
+            try:
+                session_id = (metadata or {}).get("session_id") if metadata else None
+                if not session_id:
+                    session_id = f"mem_{user_id}_{int(time.time())}"
+                agent_id = (metadata or {}).get("agent_id", "memory_service")
+                saved = self.save_message_to_internal_memory(
+                    user_id=user_id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    user_message=content,
+                    agent_response="Memória registrada"
+                )
+                success_internal = bool(saved)
+            except Exception as e:
+                logging.warning(f"Erro ao adicionar memória interna: {e}")
+
+            return bool(success_mem0 or success_internal)
         except Exception as e:
             logging.error(f"Erro ao adicionar memória: {e}")
             return False
