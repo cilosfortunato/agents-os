@@ -11,7 +11,7 @@ def test_memory_endpoint():
     print("🔍 TESTE DO ENDPOINT /v1/memory/search")
     print("=" * 50)
     
-    base_url = "http://localhost:8002"
+    base_url = "http://localhost:80"
     headers = {
         "X-API-Key": "151fb361-f295-4a4f-84c9-ec1f42599a67",
         "Content-Type": "application/json"
