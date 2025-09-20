@@ -18,12 +18,12 @@ import time
 
 # Importações para IA e memória
 # import openai  # Comentado - usando apenas Vertex AI
-from mem0 import MemoryClient
+# from mem0 import MemoryClient  # Substituído por PostgreSQL
 import redis
 
 # Importação dos serviços
 from supabase_service import SupabaseService
-from dual_memory_service import dual_memory_service
+from postgres_dual_memory_service import postgres_dual_memory_service as dual_memory_service
 # from vertex_ai_client import VertexAIClient
 from vertex_ai_client_new import VertexAIClientNew  # Comentado para usar mock
 from vertex_ai_client_mock import VertexAIClientMock as VertexAIClient
@@ -38,7 +38,7 @@ load_dotenv()
 INTERNAL_API_KEY = "151fb361-f295-4a4f-84c9-ec1f42599a67"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-MEM0_API_KEY = os.getenv("MEM0_API_KEY")
+# MEM0_API_KEY = os.getenv("MEM0_API_KEY")  # Não mais necessário
 REDIS_URL = os.getenv("REDIS_URL", "")
 OUTBOUND_WEBHOOK_URL = os.getenv("OUTBOUND_WEBHOOK_URL", "https://webhook.doxagrowth.com.br/webhook/recebimentos-mensagens-agentos")
 WEBHOOK_API_KEY = os.getenv("OUTBOUND_WEBHOOK_API_KEY", "")
@@ -249,7 +249,7 @@ class MessageResponse(BaseModel):
 # Inicializa FastAPI
 app = FastAPI(
     title="API de Agente de Suporte com Knowledge e Memória",
-    description="Uma API completa para interagir com agentes inteligentes que usam RAG nativo e memória Mem0.",
+    description="Uma API completa para interagir com agentes inteligentes que usam RAG nativo e memória PostgreSQL com pgvector.",
     version="1.0.0",
     openapi_tags=[
         {
@@ -269,8 +269,8 @@ app = FastAPI(
             "description": "Base de conhecimento e busca semântica"
         },
         {
-            "name": "Memória (Mem0)",
-            "description": "Sistema de memória contextual"
+            "name": "Memória (PostgreSQL)",
+            "description": "Operações de memória contextual com PostgreSQL e pgvector"
         }
     ]
 )
@@ -331,10 +331,10 @@ class KnowledgeService:
         return True
 
 class MemoryService:
-    """Serviço de Memória com Mem0 - Integrado com dual_memory_service"""
+    """Serviço de Memória com PostgreSQL - Integrado com postgres_dual_memory_service"""
     
     def __init__(self):
-        # Usar o dual_memory_service já importado
+        # Usar o postgres_dual_memory_service já importado
         self.dual_memory = dual_memory_service
     
     def save_memory(self, user_id: str, prompt: str, response: str) -> bool:
@@ -794,7 +794,7 @@ async def chat_with_agent(request: ChatRequest, api_key: str = Depends(verify_ap
             agent_name=request.agent_name
         )
         
-        # Salva na memória dupla (Supabase + Mem0)
+        # Salva na memória dupla (Supabase + PostgreSQL)
         agent_id = request.agent_name  # Usando agent_name como ID temporário
         memory_result = dual_memory_service.save_complete_interaction(
             user_id=request.user_id,
@@ -1095,9 +1095,9 @@ async def sync_knowledge(api_key: str = Depends(verify_api_key)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na sincronização: {str(e)}")
 
-# ===== MEMÓRIA (MEM0) =====
+# ===== MEMÓRIA (POSTGRESQL) =====
 
-@app.get("/v1/memory/search", tags=["Memória (Mem0)"], summary="Buscar memórias do usuário")
+@app.get("/v1/memory/search", tags=["Memória (PostgreSQL)"], summary="Buscar memórias do usuário")
 async def search_memory(
     user_id: str = Query(..., description="ID do usuário"), 
     query: str = Query(..., description="Consulta de busca"), 
@@ -1116,7 +1116,7 @@ async def search_memory(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na busca de memória: {str(e)}")
 
-@app.post("/v1/memory/add", tags=["Memória (Mem0)"], summary="Adicionar memória")
+@app.post("/v1/memory/add", tags=["Memória (PostgreSQL)"], summary="Adicionar memória")
 async def add_memory(request: MemoryAddRequest, api_key: str = Depends(verify_api_key)):
     """Adiciona uma nova memória para o usuário"""
     try:
@@ -1128,7 +1128,7 @@ async def add_memory(request: MemoryAddRequest, api_key: str = Depends(verify_ap
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao adicionar memória: {str(e)}")
 
-@app.get("/v1/memory/{user_id}", tags=["Memória (Mem0)"], summary="Obter todas as memórias do usuário")
+@app.get("/v1/memory/{user_id}", tags=["Memória (PostgreSQL)"], summary="Obter todas as memórias do usuário")
 async def get_user_memories(user_id: str, api_key: str = Depends(verify_api_key)):
     """Obtém todas as memórias de um usuário"""
     try:
@@ -1166,7 +1166,7 @@ async def health_check():
             "statistics": {
                 "total_agents": len(supabase_service.list_all_agents()),
                 "total_sessions": len(sessions_db),
-                "memory_service": "integrated_with_dual_memory"
+                "memory_service": "postgresql_with_pgvector"
             }
         }
     except Exception as e:

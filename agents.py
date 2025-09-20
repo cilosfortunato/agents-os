@@ -59,6 +59,39 @@ def create_model():
     else:
         return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
 
+def create_model_from_config(model_config: dict):
+    """Cria uma instância do modelo baseado na configuração fornecida"""
+    if not model_config:
+        return create_model()
+    
+    provider = model_config.get("provider", "openai")
+    model_name = model_config.get("name", "gpt-4o-mini")
+    
+    if AGNO_AVAILABLE:
+        try:
+            if provider == "gemini":
+                # Para modelos Gemini, usa o formato google/modelo
+                model_id = f"google/{model_name}"
+                return OpenRouterModel(
+                    model_id=model_id,
+                    api_key=os.getenv("OPENROUTER_API_KEY")
+                )
+            elif provider == "openai":
+                # Para modelos OpenAI, usa o formato openai/modelo
+                model_id = f"openai/{model_name}"
+                return OpenRouterModel(
+                    model_id=model_id,
+                    api_key=os.getenv("OPENROUTER_API_KEY")
+                )
+            else:
+                print(f"Provider {provider} não suportado, usando OpenAI")
+                return create_model()
+        except NameError:
+            print("OpenRouterModel não disponível, usando mock")
+            return MockModel(f"{provider}/{model_name}", os.getenv("OPENAI_API_KEY"))
+    else:
+        return MockModel(f"{provider}/{model_name}", os.getenv("OPENAI_API_KEY"))
+
 def create_assistente_principal():
     """Cria o agente assistente principal usando AgentOS"""
     AgentClass = Agent if AGNO_AVAILABLE else MockAgent
@@ -180,10 +213,13 @@ def create_custom_agent(name: str, role: str = None, instructions: list = None, 
     # Usa system_message se fornecido, senão usa instructions
     agent_instructions = system_message or (instructions if instructions else ["Você é um assistente útil."])
     
+    # Cria o modelo baseado nos parâmetros fornecidos
+    agent_model = create_model_from_config(model) if model else create_model()
+    
     # Cria o agente com os parâmetros fornecidos
     agent = AgentClass(
         name=name,
-        model=create_model(),
+        model=agent_model,
         instructions=agent_instructions if isinstance(agent_instructions, list) else [agent_instructions],
         tools=[ToolsClass()] if tools and "DuckDuckGoTools" in tools else [],
         markdown=markdown

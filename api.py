@@ -58,6 +58,9 @@ class AgentCreateRequest(BaseModel):
     role: str = Field(..., description="Papel do agente", example="string")
     instructions: List[str] = Field(..., description="Lista de instruções para o agente", example=["string"])
     user_id: str = Field("default_user", description="ID do usuário", example="default_user")
+    model: Optional[str] = Field("gpt-4o-mini", description="Nome do modelo", example="gemini-2.5-flash")
+    provider: Optional[str] = Field("openai", description="Provedor do modelo", example="gemini")
+    account_id: Optional[str] = Field(None, description="ID da conta", example="f7dae33c-6364-4d88-908f-f5f64426a5c9")
 
 class AgentUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -254,13 +257,19 @@ def create_api_app() -> FastAPI:
             # Converte as instruções em uma mensagem de sistema
             system_message = f"Você é um {request.role}. " + " ".join(request.instructions)
             
+            # Cria a configuração do modelo baseada na requisição
+            model_config = {
+                "provider": request.provider or "openai",
+                "name": request.model or "gpt-4o-mini"
+            }
+            
             agent = create_custom_agent(
                 name=request.name,
                 role=request.role,
                 instructions=request.instructions,
                 user_id=request.user_id,
                 agent_id=agent_id,
-                model={"provider": "openai", "name": "gpt-4o-mini"},
+                model=model_config,
                 system_message=system_message,
                 enable_user_memories=True,
                 tools=["DuckDuckGoTools"],
@@ -268,7 +277,7 @@ def create_api_app() -> FastAPI:
                 num_history_runs=5,
                 add_datetime_to_context=True,
                 markdown=True,
-                account_id=getattr(request, 'account_id', None)  # Adiciona account_id se disponível
+                account_id=request.account_id
             )
             return {
                 "message": "Agente criado com sucesso",
