@@ -128,6 +128,11 @@ logs/
 *.p12
 *.pfx
 
+# Credenciais Google Cloud
+service_account.json
+google_credentials.json
+*.json.key
+
 # Arquivos de configuração local
 config.local.py
 settings.local.py
