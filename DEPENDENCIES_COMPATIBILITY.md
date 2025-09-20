@@ -19,8 +19,8 @@ pydantic-settings==2.1.0
 
 #### AI/ML Libraries
 ```
-openai==1.3.0
-mem0ai==0.1.0
+openai==1.99.9
+mem0ai==0.1.117
 pinecone-client==2.2.4
 langchain==0.1.0
 langchain-openai==0.0.2
