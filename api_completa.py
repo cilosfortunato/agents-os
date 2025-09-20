@@ -17,13 +17,19 @@ import json
 import time
 
 # Importações para IA e memória
-import openai
+# import openai  # Comentado - usando apenas Vertex AI
 from mem0 import MemoryClient
 import redis
 
 # Importação dos serviços
 from supabase_service import SupabaseService
 from dual_memory_service import dual_memory_service
+# from vertex_ai_client import VertexAIClient
+from vertex_ai_client_new import VertexAIClientNew  # Comentado para usar mock
+from vertex_ai_client_mock import VertexAIClientMock as VertexAIClient
+
+# Instanciar cliente Vertex AI
+vertex_ai_client_new = VertexAIClientNew()
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -36,8 +42,63 @@ MEM0_API_KEY = os.getenv("MEM0_API_KEY")
 REDIS_URL = os.getenv("REDIS_URL", "")
 OUTBOUND_WEBHOOK_URL = os.getenv("OUTBOUND_WEBHOOK_URL", "https://webhook.doxagrowth.com.br/webhook/recebimentos-mensagens-agentos")
 WEBHOOK_API_KEY = os.getenv("OUTBOUND_WEBHOOK_API_KEY", "")
-openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-openai.api_key = OPENAI_API_KEY  # Compat para SDKs antigos que usam openai.ChatCompletion
+
+# Debug: Imprimir configuração do webhook na inicialização
+print(f"🔗 WEBHOOK CONFIG: URL={OUTBOUND_WEBHOOK_URL}")
+print(f"🔑 WEBHOOK CONFIG: API_KEY={'SET' if WEBHOOK_API_KEY else 'NOT_SET'}")
+
+# Configuração Google AI API (Gemini)
+GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "AIzaSyDJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ")
+
+# Inicialização dos clientes
+# openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)  # Comentado - usando apenas Google AI
+# openai.api_key = OPENAI_API_KEY  # Compat para SDKs antigos que usam openai.ChatCompletion
+
+# Instância do cliente Vertex AI (novo)
+vertex_ai_client_new = VertexAIClientNew(
+    api_key="AQ.Ab8RN6LDtoXn4cdQvG62dfzA2M6FozHfH6Tgb8EG4WaS78uc3g"
+)
+
+# Inicializa cliente Google AI (Gemini) - mantido para compatibilidade
+vertex_ai_client = VertexAIClient(
+    api_key=GOOGLE_AI_API_KEY
+)
+
+# Função para detectar se deve usar Vertex AI
+def _is_vertex_ai_model(model_id: str) -> bool:
+    """Detecta se o modelo especificado é do Vertex AI (Gemini)"""
+    vertex_models = ["gemini-2.5-flash", "gemini-pro", "gemini-flash", "google/gemini"]
+    return any(vertex_model in model_id.lower() for vertex_model in vertex_models)
+
+# Helper para completar com Vertex AI (usando novo cliente)
+def _complete_with_vertex_ai(system_prompt: str, user_query: str, model_id: str, temperature: float = 0.7, max_tokens: int = 1000) -> Dict[str, Any]:
+    """Completa usando Vertex AI e retorna resposta com metadados"""
+    try:
+        # Prepara mensagens no formato correto
+        messages = [
+            {"role": "user", "content": f"{system_prompt}\n\nPERGUNTA DO USUÁRIO:\n{user_query}"}
+        ]
+        
+        # Usa o novo cliente Vertex AI
+        result = vertex_ai_client_new.generate_content(
+            messages=messages,
+            model=model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_instruction=system_prompt
+        )
+        
+        # O novo cliente já retorna no formato correto
+        return {
+            "text": result["text"],
+            "usage": result["usage"]
+        }
+        
+    except Exception as e:
+        return {
+            "text": f"Erro ao processar com Vertex AI: {str(e)}",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "model": model_id}
+        }
 
 # Helper compatível para chamadas OpenAI (Responses API nova ou Chat Completions legado)
 def _complete_with_openai(system_prompt: str, user_query: str, model_id: str, temperature: float = 0.7, max_tokens: int = 1000) -> str:
@@ -64,29 +125,31 @@ def _complete_with_openai(system_prompt: str, user_query: str, model_id: str, te
                 return text
     except Exception:
         pass
-    # Tenta Chat Completions do SDK v1 (openai.chat.completions)
-    try:
-        if hasattr(openai, "chat") and hasattr(openai.chat, "completions"):
-            resp = openai.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            return resp.choices[0].message.content
-    except Exception:
-        pass
-    # Tenta ChatCompletion legado (SDK v0)
-    try:
-        resp = openai.ChatCompletion.create(
-            model=model_id,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return resp["choices"][0]["message"]["content"]
-    except Exception as e:
-        raise e
+    # Fallbacks do OpenAI comentados - usando apenas Vertex AI
+    # try:
+    #     if hasattr(openai, "chat") and hasattr(openai.chat, "completions"):
+    #         resp = openai.chat.completions.create(
+    #             model=model_id,
+    #             messages=messages,
+    #             temperature=temperature,
+    #             max_tokens=max_tokens,
+    #         )
+    #         return resp.choices[0].message.content
+    # except Exception:
+    #     pass
+    # try:
+    #     resp = openai.ChatCompletion.create(
+    #         model=model_id,
+    #         messages=messages,
+    #         temperature=temperature,
+    #         max_tokens=max_tokens,
+    #     )
+    #     return resp["choices"][0]["message"]["content"]
+    # except Exception as e:
+    #     raise e
+    
+    # Se chegou aqui, não conseguiu gerar resposta
+    raise Exception("Não foi possível gerar resposta com o OpenAI")
 
 # Função de verificação de API Key
 async def verify_api_key(x_api_key: str = Header(None)):
@@ -129,7 +192,8 @@ class AgentCreateRequest(BaseModel):
     name: str = Field(..., description="Nome do agente")
     role: str = Field(..., description="Papel/função do agente")
     instructions: List[str] = Field(..., description="Lista de instruções para o agente")
-    model: Optional[str] = Field("openai/gpt-4o-mini", description="Modelo LLM a ser usado")
+    model: Optional[str] = Field("gemini-2.5-flash", description="Modelo LLM a ser usado")
+    provider: Optional[str] = Field("gemini", description="Provider do modelo (gemini, openai)")
     account_id: Optional[str] = Field(None, description="ID da conta associada ao agente")
 
 class AgentUpdateRequest(BaseModel):
@@ -137,6 +201,7 @@ class AgentUpdateRequest(BaseModel):
     role: Optional[str] = Field(None, description="Nova função do agente")
     instructions: Optional[List[str]] = Field(None, description="Novas instruções")
     model: Optional[str] = Field(None, description="Novo modelo LLM")
+    provider: Optional[str] = Field(None, description="Novo provider do modelo (gemini, openai)")
     account_id: Optional[str] = Field(None, description="Novo ID da conta")
 
 class AgentResponse(BaseModel):
@@ -145,6 +210,7 @@ class AgentResponse(BaseModel):
     role: str
     instructions: List[str]
     model: str
+    provider: Optional[str]
     account_id: Optional[str]
     created_at: str
 
@@ -315,6 +381,53 @@ if REDIS_URL:
     except Exception:
         redis_client = None
 
+# Adiciona resolução automática de sessão (auto-resume)
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "86400"))  # 24h por padrão
+_active_sessions_mem: Dict = {}
+_active_sessions_expiry: Dict = {}
+
+def _active_session_key(agent_id: str, user_id: str) -> str:
+    return f"active_session:{agent_id}:{user_id}"
+
+def _remember_active_session(agent_id: str, user_id: str, session_id: str):
+    try:
+        if redis_client:
+            redis_client.setex(_active_session_key(agent_id, user_id), SESSION_TTL_SECONDS, session_id)
+        else:
+            _active_sessions_mem[(agent_id, user_id)] = session_id
+            _active_sessions_expiry[(agent_id, user_id)] = time.time() + SESSION_TTL_SECONDS
+    except Exception:
+        # Evita quebrar o fluxo por erro de cache
+        pass
+
+def resolve_session_id(agent_id: str, user_id: str, provided_session_id: Optional[str]) -> str:
+    """Resolve e mantém o session_id ativo por (agent_id,user_id) se o cliente não enviar.
+    - Se o cliente enviar, lembra esse ID com TTL.
+    - Se não enviar, tenta recuperar do Redis/memória.
+    - Se não existir, cria um novo e lembra.
+    """
+    try:
+        if provided_session_id:
+            _remember_active_session(agent_id, user_id, provided_session_id)
+            return provided_session_id
+        if redis_client:
+            sid = redis_client.get(_active_session_key(agent_id, user_id))
+            if sid:
+                return sid
+        else:
+            exp = _active_sessions_expiry.get((agent_id, user_id))
+            if exp and exp > time.time():
+                sid = _active_sessions_mem.get((agent_id, user_id))
+                if sid:
+                    return sid
+        # Não havia sessão ativa -> cria nova
+        new_sid = str(uuid.uuid4())
+        _remember_active_session(agent_id, user_id, new_sid)
+        return new_sid
+    except Exception:
+        # Fallback total
+        return provided_session_id or str(uuid.uuid4())
+
 # Estruturas de fallback em memória
 _inmemory_buffers = {}
 _inmemory_deadlines = {}
@@ -472,7 +585,9 @@ def _debounce_handler_factory(agent_id: str, user_id: str, session_id: str):
                 }
 
             # Executar agente com contexto
-            response_text = execute_agent_with_memory(last_message or combined_query, user_id, agent, memory_context)
+            agent_result = execute_agent_with_memory(last_message or combined_query, user_id, agent, memory_context)
+            response_text = agent_result["text"]
+            agent_usage = agent_result["usage"]
 
             # Salvar memória da interação combinada (não bloquear envio de webhook)
             try:
@@ -495,11 +610,7 @@ def _debounce_handler_factory(agent_id: str, user_id: str, session_id: str):
                 "user_id": user_id,
                 "agent_id": agent_id,
                 "custom": [],
-                "agent_usage": {
-                    "input_tokens": len((combined_query or last_message).split()),
-                    "output_tokens": len(response_text.split()),
-                    "model": agent.get("model", "gpt-4o-mini")
-                }
+                "agent_usage": agent_usage
             }
 
             headers = {
@@ -530,33 +641,55 @@ knowledge_service = KnowledgeService()
 memory_service = MemoryService()
 
 # Função para executar agente usando OpenAI diretamente
-def execute_agent(query: str, user_id: str, agent_data: dict) -> str:
-    """Executa o agente usando OpenAI diretamente"""
+def execute_agent(query: str, user_id: str, agent_data: dict) -> Dict[str, Any]:
+    """Executa o agente usando OpenAI ou Vertex AI e retorna resposta com metadados"""
     try:
         # Template de prompt para o agente
         prompt = (
             f"Você é um {agent_data['role']}.\n"
             f"Siga estas instruções:\n"
             f"{chr(10).join(agent_data['instructions'])}\n\n"
-            f"Responda à pergunta do usuário de forma precisa e profissional.\n\n"
-            f"PERGUNTA:\n{query}"
+            f"Responda à pergunta do usuário de forma precisa e profissional."
         )
+        
         # Modelo (remove prefixo openai/ se existir)
-        model_id = (agent_data.get("model") or "openai/gpt-4o-mini").replace("openai/", "")
-        # Geração com helper compatível (Responses API ou Chat Completions)
-        return _complete_with_openai(
-            system_prompt=prompt,
-            user_query=query,
-            model_id=model_id,
-            temperature=0.7,
-            max_tokens=1000,
-        )
+        model_id = (agent_data.get("model") or "gemini-2.5-flash").replace("openai/", "")
+        
+        # Detecta se deve usar Vertex AI
+        if _is_vertex_ai_model(model_id):
+            result = _complete_with_vertex_ai(
+                system_prompt=prompt,
+                user_query=query,
+                model_id=model_id,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            return {
+                "text": result["text"],
+                "usage": result["usage"]
+            }
+        else:
+            # Usa OpenAI
+            text = _complete_with_openai(
+                system_prompt=prompt,
+                user_query=query,
+                model_id=model_id,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            return {
+                "text": text,
+                "usage": {"input_tokens": 0, "output_tokens": 0, "model": model_id}
+            }
 
     except Exception as e:
-        return f"Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente. Erro: {str(e)}"
+        return {
+            "text": f"Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente. Erro: {str(e)}",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "model": "error"}
+        }
 
-def execute_agent_with_memory(query: str, user_id: str, agent_data: dict, memory_context: dict) -> str:
-    """Executa agente com contexto de memória dupla usando OpenAI diretamente"""
+def execute_agent_with_memory(query: str, user_id: str, agent_data: dict, memory_context: dict) -> Dict[str, Any]:
+    """Executa agente com contexto de memória dupla usando OpenAI ou Vertex AI"""
     try:
         system_prompt = f"""Você é {agent_data["role"]}.
 
@@ -573,16 +706,41 @@ HISTÓRICO RELACIONADO:
 {memory_context.get("search_context", "Nenhum histórico relacionado")}
 
 Responda de forma natural, considerando todo o contexto acima. Se houver informações contraditórias, priorize o contexto da sessão atual."""
-        model_id = (agent_data.get("model") or "openai/gpt-4o-mini").replace("openai/", "")
-        return _complete_with_openai(
-            system_prompt=system_prompt,
-            user_query=query,
-            model_id=model_id,
-            temperature=0.7,
-            max_tokens=1000,
-        )
+        
+        model_id = (agent_data.get("model") or "gemini-2.5-flash").replace("openai/", "")
+        
+        # Detecta se deve usar Vertex AI
+        if _is_vertex_ai_model(model_id):
+            result = _complete_with_vertex_ai(
+                system_prompt=system_prompt,
+                user_query=query,
+                model_id=model_id,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            return {
+                "text": result["text"],
+                "usage": result["usage"]
+            }
+        else:
+            # Usa OpenAI
+            text = _complete_with_openai(
+                system_prompt=system_prompt,
+                user_query=query,
+                model_id=model_id,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            return {
+                "text": text,
+                "usage": {"input_tokens": 0, "output_tokens": 0, "model": model_id}
+            }
+            
     except Exception as e:
-        return f"Desculpe, ocorreu um erro ao processar sua solicitação com memória. Erro: {str(e)}"
+        return {
+            "text": f"Desculpe, ocorreu um erro ao processar sua solicitação com memória. Erro: {str(e)}",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "model": "error"}
+        }
 
 # Função para gerar resposta inteligente com memória dupla
 def generate_intelligent_response(query: str, user_id: str, session_id: str, agent_name: str = "Especialista em Produtos") -> str:
@@ -615,28 +773,10 @@ def generate_intelligent_response(query: str, user_id: str, session_id: str, age
         )
         
         # Executa o agente com contexto enriquecido
-        return execute_agent_with_memory(query, user_id, agent_data, memory_context)
+        agent_result = execute_agent_with_memory(query, user_id, agent_data, memory_context)
+        return agent_result["text"]
     except Exception as e:
         return f"Erro ao gerar resposta: {str(e)}"
-
-# Endpoints da API
-
-@app.get("/", tags=["Status"], summary="Status da API")
-async def root():
-    """Endpoint de status da API"""
-    return {
-        "message": "API de Agente com Knowledge e Memória",
-        "status": "online",
-        "version": "1.0.0",
-        "features": ["RAG com Pinecone", "Memória com Mem0", "Agentes Inteligentes"],
-        "endpoints": {
-            "chat": "/v1/chat",
-            "messages": "/v1/messages",
-            "agents": "/v1/agents",
-            "knowledge": "/v1/knowledge",
-            "memory": "/v1/memory"
-        }
-    }
 
 # ===== CHAT & MENSAGENS =====
 
@@ -688,55 +828,82 @@ async def chat_with_agent(request: ChatRequest, api_key: str = Depends(verify_ap
         raise HTTPException(status_code=500, detail=f"Erro no chat: {str(e)}")
 
 @app.post("/v1/messages", tags=["Chat & Mensagens"], summary="Enviar mensagem para agente")
-async def send_message_to_agent(request: MessageRequest, api_key: str = Depends(verify_api_key), background_tasks: BackgroundTasks = None) -> MessageResponse:
+async def send_message_to_agent(
+    request: Union[MessageRequest, List[MessageRequest]],
+    api_key: str = Depends(verify_api_key),
+    background_tasks: BackgroundTasks = None
+) -> MessageResponse:
     """
     Endpoint principal para envio de mensagens para agentes inteligentes.
+    
+    Suporta receber um único objeto MessageRequest OU uma lista de objetos (compatibilidade com integrações que enviam arrays).
     
     Comportamento de debounce: mensagens recebidas dentro da janela (debounce em ms) são agrupadas
     e processadas em uma única resposta enviada ao webhook de saída.
     """
     try:
         t0 = time.perf_counter()
-        session_id = request.session_id or str(uuid.uuid4())
+        
+        # Normaliza para lista de itens ANTES de acessar atributos (evita erro quando o corpo é uma lista)
+        items: List[MessageRequest] = request if isinstance(request, list) else [request]
+        last_item = items[-1]
+        
+        # Session ID inicial seguro mesmo quando o corpo for uma lista
+        session_id = (last_item.session_id or str(uuid.uuid4()))
+
+        # Resolve/atribui session_id de forma estável por (agent_id,user_id)
+        session_id = resolve_session_id(last_item.agent_id, last_item.user_id, last_item.session_id)
 
         # Apenas valida se existe pelo menos 1 agente (não processa aqui)
+        agent = None
         try:
-            agent = supabase_service.get_agent(request.agent_id)
+            agent = supabase_service.get_agent(last_item.agent_id)
             if not agent:
                 raise Exception("Agente não encontrado")
         except Exception:
             agents = supabase_service.list_all_agents()
             if not agents:
                 raise HTTPException(status_code=404, detail="Nenhum agente disponível")
+            # Fallback: tenta localizar o agente pelo id; se não achar, usa o primeiro disponível
+            if isinstance(agents, list):
+                try:
+                    agent = next((a for a in agents if isinstance(a, dict) and a.get("id") == last_item.agent_id), None)
+                except Exception:
+                    agent = None
+                if agent is None:
+                    agent = agents[0]
         t1 = time.perf_counter()
 
         # Monta chave de agrupamento
-        base_key = f"{request.agent_id}:{request.user_id}:{session_id}"
-        # Define debounce efetivo (permite 0)
-        effective_debounce_ms = request.debounce if request.debounce is not None else 15000
-        # Enfileira a mensagem no buffer e (re)define deadline
-        debounce_manager.add_message(
-            base_key,
-            {
-                "mensagem": request.mensagem,
-                "agent_id": request.agent_id,
-                "user_id": request.user_id,
-                "session_id": session_id,
-                "message_id": request.message_id,
-                "cliente_id": request.cliente_id,
-                "id_conta": request.id_conta,
-                "timestamp": datetime.now().isoformat()
-            },
-            effective_debounce_ms
-        )
+        base_key = f"{last_item.agent_id}:{last_item.user_id}:{session_id}"
+        # Define debounce efetivo (permite 0) usando o último item
+        effective_debounce_ms = last_item.debounce if last_item.debounce is not None else 15000
+
+        # Enfileira TODAS as mensagens recebidas nesta chamada
+        for it in items:
+            # Garante que todo item use o session_id resolvido para manter o agrupamento
+            debounce_manager.add_message(
+                base_key,
+                {
+                    "mensagem": it.mensagem,
+                    "agent_id": it.agent_id,
+                    "user_id": it.user_id,
+                    "session_id": session_id,
+                    "message_id": it.message_id,
+                    "cliente_id": it.cliente_id,
+                    "id_conta": it.id_conta,
+                    "timestamp": datetime.now().isoformat()
+                },
+                effective_debounce_ms
+            )
         t2 = time.perf_counter()
 
-        # Agenda o worker que aguardará a janela e processará quando expirar
+        # Agenda o worker que aguardará a janela e processará quando expirar (apenas uma vez)
         if background_tasks is not None:
             background_tasks.add_task(
                 debounce_manager.process_when_ready,
                 base_key,
-                _debounce_handler_factory(request.agent_id, request.user_id, session_id)
+                _debounce_handler_factory(last_item.agent_id, last_item.user_id, session_id)
             )
         t3 = time.perf_counter()
 
@@ -758,10 +925,13 @@ async def send_message_to_agent(request: MessageRequest, api_key: str = Depends(
             messages=[f"Debounce iniciado. A resposta será enviada ao webhook em até {int((effective_debounce_ms)/1000)}s se não houver novas mensagens."],
             transferir=False,
             session_id=session_id,
-            user_id=request.user_id,
-            agent_id=request.agent_id,
+            user_id=last_item.user_id,
+            agent_id=last_item.agent_id,
             custom=[],
-            agent_usage=None
+            agent_usage={
+                "provider": (agent.get("provider") if isinstance(agent, dict) else None),
+                "model": (agent.get("model") if isinstance(agent, dict) else None),
+            }
         )
 
     except Exception as e:
@@ -778,7 +948,8 @@ async def create_agent(request: AgentCreateRequest, api_key: str = Depends(verif
             name=request.name,
             role=request.role,
             instructions=request.instructions,
-            model=request.model or "gpt-4o-mini",
+            model=request.model or "gemini-2.5-flash",
+            provider=request.provider or "gemini",
             account_id=request.account_id
         )
         
@@ -895,13 +1066,17 @@ async def delete_agent(agent_id: str, api_key: str = Depends(verify_api_key)):
 
 # ===== KNOWLEDGE (RAG) =====
 
-@app.post("/v1/knowledge/search", tags=["Knowledge (RAG)"], summary="Buscar na base de conhecimento")
-async def search_knowledge(request: KnowledgeSearchRequest, api_key: str = Depends(verify_api_key)):
+@app.get("/v1/knowledge/search", tags=["Knowledge (RAG)"], summary="Buscar na base de conhecimento")
+async def search_knowledge(
+    query: str = Query(..., description="Consulta para buscar na base de conhecimento"),
+    limit: int = Query(5, description="Número máximo de resultados"),
+    api_key: str = Depends(verify_api_key)
+):
     """Busca direta na base de conhecimento (RAG)"""
     try:
-        results = knowledge_service.search_knowledge(request.query, request.limit)
+        results = knowledge_service.search_knowledge(query, limit)
         return {
-            "query": request.query,
+            "query": query,
             "results": results,
             "total": len(results)
         }

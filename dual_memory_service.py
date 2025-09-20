@@ -439,5 +439,29 @@ class DualMemoryService:
             logging.error(f"Erro ao adicionar memória: {e}")
             return False
 
+    def _extract_search_terms(self, query: str) -> List[str]:
+        """
+        Extrai termos de busca relevantes da query
+        """
+        import re
+        
+        # Remove pontuação e converte para minúsculas
+        clean_query = re.sub(r'[^\w\s]', ' ', query.lower())
+        
+        # Divide em palavras e remove palavras muito curtas
+        words = [word.strip() for word in clean_query.split() if len(word.strip()) > 2]
+        
+        # Remove palavras comuns (stop words básicas em português)
+        stop_words = {
+            'que', 'para', 'com', 'uma', 'por', 'como', 'mais', 'mas', 'foi', 'dos', 
+            'tem', 'seu', 'sua', 'são', 'ele', 'ela', 'isso', 'este', 'esta', 'esse',
+            'essa', 'aquele', 'aquela', 'quando', 'onde', 'porque', 'qual', 'quais'
+        }
+        
+        terms = [word for word in words if word not in stop_words]
+        
+        # Retorna no máximo 5 termos mais relevantes
+        return terms[:5] if terms else [query.lower()]
+
 # Instância global do serviço de memória dupla
 dual_memory_service = DualMemoryService()
