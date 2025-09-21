@@ -5,7 +5,7 @@ from config import Config
 
 try:
     from agno.agent import Agent
-    from agno.models.openrouter import OpenRouterModel
+    from agno.models.openrouter import OpenAIChat, OpenRouterModel
     from agno.tools.duckduckgo import DuckDuckGoTools
     AGNO_AVAILABLE = True
     print("✅ Agno importado com sucesso!")
@@ -46,48 +46,53 @@ class MockDuckDuckGoTools:
         return f"Resultado mock da pesquisa para: {query}"
 
 def create_model():
-    """Cria uma instância do modelo OpenAI via OpenRouter configurado"""
+    """Cria uma instância do modelo OpenAI nativo configurado"""
     if AGNO_AVAILABLE:
         try:
-            return OpenRouterModel(
-                model_id="openai/gpt-4o-mini",
-                api_key=os.getenv("OPENROUTER_API_KEY")
+            return OpenAIChat(
+                model_id="gpt-4o-mini",
+                api_key=os.getenv("OPENAI_API_KEY")
             )
         except NameError:
-            print("OpenRouterModel não disponível, usando mock")
-            return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
+            print("OpenAIChat não disponível, usando mock")
+            return MockModel("gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
     else:
-        return MockModel("openai/gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
+        return MockModel("gpt-4o-mini", os.getenv("OPENAI_API_KEY"))
 
-def create_model_from_config(model_config: dict):
+def create_model_from_config(model_config):
     """Cria uma instância do modelo baseado na configuração fornecida"""
     if not model_config:
         return create_model()
     
-    provider = model_config.get("provider", "openai")
-    model_name = model_config.get("name", "gpt-4o-mini")
+    # Se model_config é uma string, trata como nome do modelo OpenAI
+    if isinstance(model_config, str):
+        model_name = model_config
+        provider = "openai"
+    else:
+        provider = model_config.get("provider", "openai")
+        model_name = model_config.get("name", "gpt-4o-mini")
     
     if AGNO_AVAILABLE:
         try:
-            if provider == "gemini":
-                # Para modelos Gemini, usa o formato google/modelo
-                model_id = f"google/{model_name}"
+            if provider == "gemini" or provider == "google":
+                # Para modelos Gemini, usa OpenRouterModel
                 return OpenRouterModel(
-                    model_id=model_id,
-                    api_key=os.getenv("OPENROUTER_API_KEY")
+                    model_id=model_name,
+                    api_key=os.getenv("OPENAI_API_KEY"),
+                    base_url="https://api.openai.com/v1"
                 )
             elif provider == "openai":
-                # Para modelos OpenAI, usa o formato openai/modelo
-                model_id = f"openai/{model_name}"
+                # Para modelos OpenAI, usa OpenRouterModel
                 return OpenRouterModel(
-                    model_id=model_id,
-                    api_key=os.getenv("OPENROUTER_API_KEY")
+                    model_id=model_name,
+                    api_key=os.getenv("OPENAI_API_KEY"),
+                    base_url="https://api.openai.com/v1"
                 )
             else:
                 print(f"Provider {provider} não suportado, usando OpenAI")
                 return create_model()
         except NameError:
-            print("OpenRouterModel não disponível, usando mock")
+            print("Modelos nativos não disponíveis, usando mock")
             return MockModel(f"{provider}/{model_name}", os.getenv("OPENAI_API_KEY"))
     else:
         return MockModel(f"{provider}/{model_name}", os.getenv("OPENAI_API_KEY"))

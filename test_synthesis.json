@@ -1,0 +1,12 @@
+[
+  {
+    "mensagem": "Vocês têm botox? Qual o preço?",
+    "agent_id": "1677dc47-20d0-442a-80a8-171f00d39d39",
+    "debounce": 15000,
+    "session_id": "test-synthesis-session",
+    "message_id": "test-synthesis-msg-1",
+    "cliente_id": "",
+    "user_id": "test-synthesis-user@example.com",
+    "id_conta": "f7dae33c-6364-4d88-908f-f5f64426a5c9"
+  }
+]

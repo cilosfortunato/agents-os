@@ -1,11 +1,9 @@
 [
   {
-    "mensagem": "Qual horário vocês funcionam?",
+    "mensagem": "Você lembra qual foi minha pergunta anterior?",
     "agent_id": "1677dc47-20d0-442a-80a8-171f00d39d39",
-    "debounce": 15000,
     "session_id": "645d4334-8660-49b0-813b-872662cd2b7c",
-    "message_id": "ef46e048-6c42-4f04-9262-2cae02a3d4d5",
-    "cliente_id": "",
+    "message_id": "ef46e048-6c42-4f04-9262-2cae02a3d4d6",
     "user_id": "116883357474955@lid",
     "id_conta": "f7dae33c-6364-4d88-908f-f5f64426a5c9"
   }

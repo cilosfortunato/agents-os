@@ -1,6 +1,0 @@
-{
-  "message": "Olá, como você está?",
-  "agent_name": "google/gemini-2.5-flash",
-  "user_id": "test-user-123",
-  "session_id": "test-session-456"
-}

@@ -10,7 +10,7 @@ class Config:
     # Chaves de API
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-    MEM0_API_KEY = os.getenv("MEM0_API_KEY")
+    # MEM0_API_KEY = os.getenv("MEM0_API_KEY")  # Substituído por PostgreSQL
     ZEP_API_KEY = os.getenv("ZEP_API_KEY")
     
     # Configurações do servidor
@@ -33,7 +33,7 @@ class Config:
         """Valida se as chaves de API necessárias estão configuradas"""
         required_keys = {
             "OPENAI_API_KEY": cls.OPENAI_API_KEY,
-            "MEM0_API_KEY": cls.MEM0_API_KEY
+            # "MEM0_API_KEY": cls.MEM0_API_KEY  # Substituído por PostgreSQL
         }
         
         missing_keys = [key for key, value in required_keys.items() if not value]

@@ -1,0 +1,12 @@
+[
+  {
+    "mensagem": "Qual horário vocês funcionam?",
+    "agent_id": "test-agent-horario",
+    "debounce": 15000,
+    "session_id": "test-session-horario-123",
+    "message_id": "test-msg-horario-456",
+    "cliente_id": "",
+    "user_id": "test-horario-user@example.com",
+    "id_conta": "test-account-horario"
+  }
+]

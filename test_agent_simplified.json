@@ -1,7 +1,0 @@
-{
-  "name": "MeuAgente",
-  "model": {"provider": "openai", "name": "gpt-4o-mini"},
-  "system_message": "Você é um assistente útil que responde perguntas sobre IA.",
-  "enable_user_memories": true,
-  "tools": ["DuckDuckGoTools"]
-}

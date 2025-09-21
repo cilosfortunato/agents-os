@@ -1,0 +1,12 @@
+[
+  {
+    "mensagem": "Preciso agendar uma consulta para amanhã",
+    "agent_id": "test-agent-final",
+    "debounce": 15000,
+    "session_id": "test-session-final-789",
+    "message_id": "test-msg-final-101",
+    "cliente_id": "",
+    "user_id": "test-final-user@example.com",
+    "id_conta": "test-account-final"
+  }
+]

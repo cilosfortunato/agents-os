@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Any, Optional
-from mem0 import MemoryClient
+from postgres_memory_system import PostgreSQLMemorySystem
 import threading
 import time
 
@@ -10,10 +10,18 @@ class TimeoutError(Exception):
     pass
 
 class MemoryManager:
-    """Gerenciador de memória usando Mem0"""
+    """Gerenciador de memória usando PostgreSQL"""
     
     def __init__(self):
-        self.client = MemoryClient()
+        # Configuração PostgreSQL usando variáveis do .env
+        postgres_host = os.getenv('POSTGRES_HOST', 'localhost')
+        postgres_port = os.getenv('POSTGRES_PORT', '5432')
+        postgres_db = os.getenv('POSTGRES_DB', 'agnos_memory')
+        postgres_user = os.getenv('POSTGRES_USER', 'postgres')
+        postgres_password = os.getenv('POSTGRES_PASSWORD', 'postgres')
+        
+        connection_string = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+        self.client = PostgreSQLMemorySystem(connection_string)
         self.timeout_seconds = 5  # Timeout de 5 segundos
     
     def _run_with_timeout(self, func, timeout_seconds=None):
@@ -44,98 +52,106 @@ class MemoryManager:
             
         return result[0]
     
-    def add_memory(self, user_id: str, messages: List[Dict[str, str]], metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def add_memory(self, user_id: str, messages, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Adiciona uma nova memória para o usuário"""
         try:
             def _add():
-                return self.client.add(
-                    messages=messages,
-                    user_id=user_id,
-                    metadata=metadata or {}
-                )
+                # Adapta para a interface PostgreSQL usando os métodos corretos
+                session_id = metadata.get('session_id', 'default') if metadata else 'default'
+                
+                # Se messages é uma string, converte para formato de mensagem
+                if isinstance(messages, str):
+                    # Salva diretamente como memória enriquecida
+                    self.client.save_memory(
+                        user_id=user_id,
+                        memory=messages,
+                        category='user_input',
+                        metadata=metadata or {}
+                    )
+                    return True
+                
+                # Se messages é uma lista, processa cada mensagem
+                for message in messages:
+                    # Usa save_message em vez de add_message
+                    self.client.save_message(
+                        session_id=session_id,
+                        user_id=user_id,
+                        role=message.get('role', 'user'),
+                        content=message.get('content', ''),
+                        metadata=metadata or {}
+                    )
+                    
+                    # Se for uma mensagem do usuário, também salva como memória enriquecida
+                    if message.get('role') == 'user' and message.get('content'):
+                        self.client.save_memory(
+                            user_id=user_id,
+                            memory=message.get('content', ''),
+                            category='conversation',
+                            metadata=metadata or {}
+                        )
+                return True
             
             result = self._run_with_timeout(_add, self.timeout_seconds)
-            logging.info(f"✅ Memória adicionada para user_id: {user_id}")
+            logging.info(f"✅ Memória PostgreSQL adicionada para user_id: {user_id}")
             return True
         except TimeoutError:
-            logging.warning(f"⚠️ Timeout Mem0 add ({self.timeout_seconds}s) para user {user_id}")
+            logging.warning(f"⚠️ Timeout PostgreSQL add ({self.timeout_seconds}s) para user {user_id}")
             return False
         except Exception as e:
-            logging.error(f"⚠️ Erro ao adicionar memória: {e}")
+            logging.error(f"⚠️ Erro ao adicionar memória PostgreSQL: {e}")
             return False
     
     def search_memories(self, user_id: str, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Busca memórias com timeout"""
         try:
             def _search():
-                return self.client.search(
-                    query=query,
+                return self.client.search_memories(
                     user_id=user_id,
+                    query=query,
                     limit=limit
                 )
             
             memories = self._run_with_timeout(_search, self.timeout_seconds)
             
             if memories:
-                logging.info(f"✅ Mem0 encontrou {len(memories)} memórias para user {user_id}")
+                logging.info(f"✅ PostgreSQL encontrou {len(memories)} memórias para user {user_id}")
                 return memories
             else:
-                logging.info(f"ℹ️ Nenhuma memória encontrada no Mem0 para user {user_id}")
+                logging.info(f"ℹ️ Nenhuma memória encontrada no PostgreSQL para user {user_id}")
                 return []
                 
         except TimeoutError:
-            logging.warning(f"⚠️ Timeout Mem0 ({self.timeout_seconds}s) para user {user_id}")
+            logging.warning(f"⚠️ Timeout PostgreSQL ({self.timeout_seconds}s) para user {user_id}")
             return []
         except Exception as e:
-            logging.warning(f"⚠️ Erro Mem0: {e}")
+            logging.warning(f"⚠️ Erro PostgreSQL: {e}")
             return []
     
     def get_all_memories(self, user_id: str) -> List[Dict[str, Any]]:
         """Recupera todas as memórias de um usuário"""
         try:
             def _get_all():
-                return self.client.get_all(user_id=user_id)
+                # Usa get_all_user_memories em vez de get_user_messages
+                return self.client.get_all_user_memories(user_id=user_id, limit=50)
             
             memories = self._run_with_timeout(_get_all, self.timeout_seconds)
             return memories or []
         except TimeoutError:
-            logging.warning(f"⚠️ Timeout Mem0 get_all ({self.timeout_seconds}s) para user {user_id}")
+            logging.warning(f"⚠️ Timeout PostgreSQL get_all ({self.timeout_seconds}s) para user {user_id}")
             return []
         except Exception as e:
-            logging.error(f"⚠️ Erro ao recuperar memórias: {e}")
+            logging.error(f"⚠️ Erro ao recuperar memórias PostgreSQL: {e}")
             return []
     
     def delete_memory(self, memory_id: str) -> bool:
-        """Remove uma memória específica"""
-        try:
-            def _delete():
-                return self.client.delete(memory_id=memory_id)
-            
-            self._run_with_timeout(_delete, self.timeout_seconds)
-            logging.info(f"✅ Memória removida: {memory_id}")
-            return True
-        except TimeoutError:
-            logging.warning(f"⚠️ Timeout Mem0 delete ({self.timeout_seconds}s) para memory {memory_id}")
-            return False
-        except Exception as e:
-            logging.error(f"⚠️ Erro ao remover memória: {e}")
-            return False
+        """Remove uma memória específica - PostgreSQL não implementado"""
+        logging.warning("⚠️ delete_memory não implementado para PostgreSQL")
+        return False
     
     def update_memory(self, memory_id: str, data: Dict[str, Any]) -> bool:
-        """Atualiza uma memória existente"""
-        try:
-            def _update():
-                return self.client.update(memory_id=memory_id, data=data)
-            
-            self._run_with_timeout(_update, self.timeout_seconds)
-            logging.info(f"✅ Memória atualizada: {memory_id}")
-            return True
-        except TimeoutError:
-            logging.warning(f"⚠️ Timeout Mem0 update ({self.timeout_seconds}s) para memory {memory_id}")
-            return False
-        except Exception as e:
-            logging.error(f"⚠️ Erro ao atualizar memória: {e}")
-            return False
+        """Atualiza uma memória existente - PostgreSQL não implementado"""
+        logging.warning("⚠️ update_memory não implementado para PostgreSQL")
+        return False
     
     def format_memories_for_context(self, memories: List[Dict[str, Any]]) -> str:
         """Formata memórias para uso como contexto em conversas"""
